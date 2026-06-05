@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { save } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useAuditRunner } from '@/hooks/useAuditRunner'
 import { ProgressBar } from '@/components/ProgressBar'
 import { ResultsTable } from '@/components/ResultsTable'
-import type { Audit } from '@/types'
+import { writeFile } from '@/lib/tauri'
+import type { Audit, AuditRun } from '@/types'
 
 const modes = [
   { value: 'sequential', label: 'Sequential (1 at a time)' },
@@ -62,6 +64,43 @@ export function AuditsPage() {
   const selectedCheckTemplate = selectedAudit
     ? checkTemplates.find((ct) => ct.id === selectedAudit.checkTemplateId)
     : null
+
+  async function exportCsv(run: AuditRun, selectors: { id: string; label: string; selector: string }[]) {
+    const path = await save({
+      defaultPath: `${selectedAudit?.name ?? 'audit'}-${new Date().toISOString().slice(0, 10)}.csv`,
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    })
+    if (!path) return
+
+    const header = ['URL', 'Status', 'Response Time (ms)', 'Error', 'Page Title']
+      .concat(selectors.map((s) => s.label))
+      .join(',')
+
+    const rows = run.results.map((r) => {
+      const cols = [
+        csvEscape(r.url),
+        r.status?.toString() ?? '',
+        r.responseTimeMs?.toString() ?? '',
+        csvEscape(r.error ?? ''),
+        csvEscape(r.pageTitle ?? ''),
+      ]
+      selectors.forEach((sel) => {
+        const cr = r.checks.find((c) => c.selectorCheckId === sel.id)
+        cols.push(cr ? `${cr.found ? '✓' : '✗'}${cr.textContent ? ` (${cr.textContent})` : ''}` : '—')
+      })
+      return cols.join(',')
+    })
+
+    const content = [header, ...rows].join('\n')
+    await writeFile(path, content)
+  }
+
+  function csvEscape(val: string): string {
+    if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+      return `"${val.replace(/"/g, '""')}"`
+    }
+    return val
+  }
 
   if (loading) {
     return <div className="text-muted-foreground">Loading...</div>
@@ -320,13 +359,21 @@ export function AuditsPage() {
 
                 {runner.run && (
                   <div className="space-y-3">
-                    <div className="flex gap-4 text-sm">
-                      <span className="text-success">✓ {runner.run.summary.passed} passed</span>
-                      <span className="text-destructive">✗ {runner.run.summary.failed} failed</span>
-                      <span className="text-muted-foreground">⚠ {runner.run.summary.errored} errored</span>
-                      <span className="text-muted-foreground">
-                        avg {Math.round(runner.run.summary.avgResponseTimeMs)}ms
-                      </span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex gap-4 text-sm">
+                        <span className="text-success">✓ {runner.run.summary.passed} passed</span>
+                        <span className="text-destructive">✗ {runner.run.summary.failed} failed</span>
+                        <span className="text-muted-foreground">⚠ {runner.run.summary.errored} errored</span>
+                        <span className="text-muted-foreground">
+                          avg {Math.round(runner.run.summary.avgResponseTimeMs)}ms
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => exportCsv(runner.run!, selectedCheckTemplate?.checks ?? [])}
+                        className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
+                      >
+                        Export CSV
+                      </button>
                     </div>
                     <ResultsTable
                       results={runner.run.results}

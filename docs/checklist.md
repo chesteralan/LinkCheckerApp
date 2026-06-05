@@ -39,6 +39,6 @@
 - [x] URL normalisation (auto-add https://)
 - [x] Clean up unused Vite scaffold assets
 - [x] Update README.md
-- [ ] CSV export
-- [ ] File import for URLs
+- [x] CSV export
+- [x] File import for URLs (txt/csv)
 - [ ] Keyboard shortcuts

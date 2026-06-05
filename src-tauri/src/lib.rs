@@ -21,12 +21,14 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Info)
+                    .build(),
+            )?;
+        }
+
+        app.handle().plugin(tauri_plugin_dialog::init())?;
 
             let app_dir = app
                 .path()
@@ -61,6 +63,8 @@ pub fn run() {
             commands::audits::delete_audit,
             commands::runs::run_audit,
             commands::runs::cancel_run,
+            commands::runs::write_file,
+            commands::runs::read_file,
             commands::runs::list_all_runs,
             commands::runs::list_audit_runs,
             commands::runs::get_run_results,

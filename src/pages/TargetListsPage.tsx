@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { open } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import type { TargetList } from '@/types'
-import { normalizeUrl } from '@/lib/tauri'
+import { normalizeUrl, readFile } from '@/lib/tauri'
 
 export function TargetListsPage() {
   const { targetLists, loading, createTargetList, updateTargetList, deleteTargetList } = useStore()
@@ -68,9 +69,34 @@ export function TargetListsPage() {
             className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
           />
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">
-              URLs (one per line)
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm text-muted-foreground">
+                URLs (one per line)
+              </label>
+              <button
+                type="button"
+                onClick={async () => {
+                  const path = await open({
+                    multiple: false,
+                    filters: [{ name: 'Text/CSV', extensions: ['txt', 'csv'] }],
+                  })
+                  if (!path) return
+                  const content = await readFile(path)
+                  const lines = content.split('\n')
+                    .map((l) => l.trim())
+                    .filter(Boolean)
+                    .filter((l) => !l.startsWith(','))
+                    .map((l) => l.split(',')[0])
+                  setUrlsText((prev) => {
+                    const existing = prev.trim() ? prev + '\n' : ''
+                    return existing + lines.join('\n')
+                  })
+                }}
+                className="text-xs text-primary hover:underline"
+              >
+                Import file
+              </button>
+            </div>
             <textarea
               placeholder="https://example.com&#10;https://example.org"
               value={urlsText}

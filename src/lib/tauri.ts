@@ -42,6 +42,12 @@ export const updateAudit = (data: { id: string; name?: string; config?: { mode: 
 export const deleteAudit = (id: string) =>
   invoke<void>('delete_audit', { id })
 
+// File I/O
+export const writeFile = (path: string, content: string) =>
+  invoke<void>('write_file', { path, content })
+export const readFile = (path: string) =>
+  invoke<string>('read_file', { path })
+
 // Runs
 export const listAllRuns = () => invoke<AuditRun[]>('list_all_runs')
 export const runAudit = (auditId: string) =>

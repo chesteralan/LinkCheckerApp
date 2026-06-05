@@ -1,3 +1,4 @@
+use std::fs;
 use tauri::{AppHandle, State};
 
 use crate::models::AuditRun;
@@ -49,6 +50,16 @@ pub async fn run_audit(
 pub fn cancel_run(state: State<'_, AppState>) -> Result<(), String> {
     state.checker.cancel();
     Ok(())
+}
+
+#[tauri::command]
+pub fn write_file(path: String, content: String) -> Result<(), String> {
+    fs::write(&path, &content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn read_file(path: String) -> Result<String, String> {
+    fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
