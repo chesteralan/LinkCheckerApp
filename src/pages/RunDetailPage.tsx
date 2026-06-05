@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '@/hooks/useStore'
 import { listAllRuns } from '@/lib/tauri'
 import { openUrl } from '@tauri-apps/plugin-opener'
@@ -12,6 +12,7 @@ interface Props {
 export function RunDetailPage({ runId, onBack }: Props) {
   const { audits, targetLists, checkTemplates } = useStore()
   const [run, setRun] = useState<AuditRun | null>(null)
+  const [filter, setFilter] = useState<'all' | 'passed' | 'failed' | 'errored'>('all')
 
   useEffect(() => {
     listAllRuns().then((runs) => {
@@ -27,7 +28,6 @@ export function RunDetailPage({ runId, onBack }: Props) {
   const audit = audits.find((a) => a.id === run.auditId)
   const tl = targetLists.find((t) => t.id === audit?.targetListId)
   const ct = checkTemplates.find((c) => c.id === audit?.checkTemplateId)
-  const [filter, setFilter] = useState<'all' | 'passed' | 'failed' | 'errored'>('all')
   const date = new Date(run.startedAt).toLocaleString()
 
   const selectors: SelectorCheck[] = []
@@ -41,14 +41,12 @@ export function RunDetailPage({ runId, onBack }: Props) {
     }
   }
 
-  const displayedResults = useMemo(() => {
-    return run.results.filter((r) => {
-      if (filter === 'passed') return !r.error && r.checks.every((c) => c.found)
-      if (filter === 'failed') return !r.error && r.checks.some((c) => !c.found)
-      if (filter === 'errored') return !!r.error
-      return true
-    })
-  }, [run.results, filter])
+  const displayedResults = run.results.filter((r) => {
+    if (filter === 'passed') return !r.error && r.checks.every((c) => c.found)
+    if (filter === 'failed') return !r.error && r.checks.some((c) => !c.found)
+    if (filter === 'errored') return !!r.error
+    return true
+  })
 
   return (
     <div className="space-y-6">
