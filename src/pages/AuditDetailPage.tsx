@@ -28,6 +28,7 @@ export function AuditDetailPage({ audit, onBack }: Props) {
   const [originOverride, setOriginOverride] = useState(audit.originOverride ?? '')
   const [urlPostfix, setUrlPostfix] = useState(audit.urlPostfix ?? '')
   const [activeTab, setActiveTab] = useState<AuditTab>('overview')
+  const [filter, setFilter] = useState<'all' | 'passed' | 'failed' | 'errored'>('all')
 
   const tl = targetLists.find((t) => t.id === audit.targetListId)
   const ct = checkTemplates.find((c) => c.id === audit.checkTemplateId)
@@ -111,15 +112,36 @@ export function AuditDetailPage({ audit, onBack }: Props) {
     const totalMs = results.reduce((s, r) => s + (r.responseTimeMs ?? 0), 0)
     const avg = results.length > 0 ? Math.round(totalMs / results.length) : 0
 
+    function FilterBtn({ label, count, status, className }: { label: string; count: number; status: typeof filter; className: string }) {
+      return (
+        <button
+          onClick={() => setFilter(filter === status ? 'all' : status)}
+          className={`${className} ${filter === status ? 'underline font-medium' : ''} hover:underline cursor-pointer`}
+        >
+          {label} {count}
+        </button>
+      )
+    }
+
     return (
-      <div className="flex gap-4 text-sm">
-        <span className="text-success">✓ {passed} passed</span>
-        <span className="text-destructive">✗ {failed} failed</span>
-        <span className="text-muted-foreground">⚠ {errored} errored</span>
+      <div className="flex gap-4 text-sm items-center">
+        <FilterBtn label="✓ passed" count={passed} status="passed" className="text-success" />
+        <FilterBtn label="✗ failed" count={failed} status="failed" className="text-destructive" />
+        <FilterBtn label="⚠ errored" count={errored} status="errored" className="text-muted-foreground" />
         <span className="text-muted-foreground">avg {avg}ms</span>
+        {filter !== 'all' && (
+          <button onClick={() => setFilter('all')} className="text-xs text-primary hover:underline cursor-pointer">clear filter</button>
+        )}
       </div>
     )
   }
+
+  const filteredResults = (runner.run?.results ?? []).filter((r) => {
+    if (filter === 'passed') return !r.error && r.checks.every((c) => c.found)
+    if (filter === 'failed') return !r.error && r.checks.some((c) => !c.found)
+    if (filter === 'errored') return !!r.error
+    return true
+  })
 
   return (
     <div className="space-y-6">
@@ -379,7 +401,7 @@ export function AuditDetailPage({ audit, onBack }: Props) {
                 )}
               </div>
               <ResultsTable
-                results={runner.run?.results ?? []}
+                results={filteredResults}
                 selectors={ct?.checks ?? []}
               />
             </div>

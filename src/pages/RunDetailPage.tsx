@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useStore } from '@/hooks/useStore'
 import { listAllRuns } from '@/lib/tauri'
 import { openUrl } from '@tauri-apps/plugin-opener'
@@ -27,6 +27,7 @@ export function RunDetailPage({ runId, onBack }: Props) {
   const audit = audits.find((a) => a.id === run.auditId)
   const tl = targetLists.find((t) => t.id === audit?.targetListId)
   const ct = checkTemplates.find((c) => c.id === audit?.checkTemplateId)
+  const [filter, setFilter] = useState<'all' | 'passed' | 'failed' | 'errored'>('all')
   const date = new Date(run.startedAt).toLocaleString()
 
   const selectors: SelectorCheck[] = []
@@ -39,6 +40,15 @@ export function RunDetailPage({ runId, onBack }: Props) {
       }
     }
   }
+
+  const displayedResults = useMemo(() => {
+    return run.results.filter((r) => {
+      if (filter === 'passed') return !r.error && r.checks.every((c) => c.found)
+      if (filter === 'failed') return !r.error && r.checks.some((c) => !c.found)
+      if (filter === 'errored') return !!r.error
+      return true
+    })
+  }, [run.results, filter])
 
   return (
     <div className="space-y-6">
@@ -73,18 +83,30 @@ export function RunDetailPage({ runId, onBack }: Props) {
           </span>
         )}
         <span>{run.results.length} URLs</span>
-        <span className="text-success">✓ {run.summary.passed} passed</span>
-        <span className="text-destructive">✗ {run.summary.failed} failed</span>
-        <span className="text-muted-foreground">⚠ {run.summary.errored} errored</span>
+        <button
+          onClick={() => setFilter(filter === 'passed' ? 'all' : 'passed')}
+          className={`text-success ${filter === 'passed' ? 'underline font-medium' : ''} hover:underline cursor-pointer`}
+        >✓ {run.summary.passed} passed</button>
+        <button
+          onClick={() => setFilter(filter === 'failed' ? 'all' : 'failed')}
+          className={`text-destructive ${filter === 'failed' ? 'underline font-medium' : ''} hover:underline cursor-pointer`}
+        >✗ {run.summary.failed} failed</button>
+        <button
+          onClick={() => setFilter(filter === 'errored' ? 'all' : 'errored')}
+          className={`text-muted-foreground ${filter === 'errored' ? 'underline font-medium' : ''} hover:underline cursor-pointer`}
+        >⚠ {run.summary.errored} errored</button>
         {run.summary.avgResponseTimeMs > 0 && (
           <span className="text-muted-foreground">
             Avg {Math.round(run.summary.avgResponseTimeMs)}ms
           </span>
         )}
+        {filter !== 'all' && (
+          <button onClick={() => setFilter('all')} className="text-xs text-primary hover:underline cursor-pointer">clear filter</button>
+        )}
       </div>
 
       <div className="space-y-4">
-        {run.results.map((result, i) => (
+        {displayedResults.map((result, i) => (
           <div key={i} className="border border-border rounded-lg p-4">
             <div className="flex items-center gap-3 mb-3">
               <span className={`w-2 h-2 rounded-full shrink-0 ${
