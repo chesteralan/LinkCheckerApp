@@ -1,8 +1,8 @@
 import type { Page } from '@/App'
 
 const nav: { id: Page; label: string }[] = [
-  { id: 'target-lists', label: 'Target Lists' },
   { id: 'check-templates', label: 'Check Templates' },
+  { id: 'target-lists', label: 'Target Lists' },
   { id: 'audits', label: 'Audits' },
   { id: 'history', label: 'Run History' },
 ]

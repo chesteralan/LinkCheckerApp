@@ -9,6 +9,8 @@ import { useHotkeys } from '@/hooks/useHotkeys'
 import { useStore } from '@/hooks/useStore'
 import type { CheckTemplate } from '@/types'
 
+declare const __APP_VERSION__: string
+
 export type Page = 'target-lists' | 'check-templates' | 'audits' | 'history'
 
 function App() {
@@ -17,8 +19,8 @@ function App() {
   const [quickAuditTemplateId, setQuickAuditTemplateId] = useState<string | null>(null)
 
   useHotkeys({
-    '1': () => { setQuickAuditTemplateId(null); setActivePage('target-lists') },
-    '2': () => { setQuickAuditTemplateId(null); setActivePage('check-templates') },
+    '1': () => { setQuickAuditTemplateId(null); setActivePage('check-templates') },
+    '2': () => { setQuickAuditTemplateId(null); setActivePage('target-lists') },
     '3': () => { setQuickAuditTemplateId(null); setActivePage('audits') },
     '4': () => { setQuickAuditTemplateId(null); setActivePage('history') },
   })
@@ -40,7 +42,10 @@ function App() {
   return (
     <div className="h-screen flex flex-col">
       <header className="border-b border-border px-6 py-3 bg-background shrink-0 flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Link Checker</h1>
+        <h1 className="text-lg font-semibold flex items-center gap-2">
+          Link Checker
+          <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md font-mono">v{__APP_VERSION__}</span>
+        </h1>
         <span className="text-xs text-muted-foreground">1-4 to navigate</span>
       </header>
       <div className="flex flex-1 min-h-0">
