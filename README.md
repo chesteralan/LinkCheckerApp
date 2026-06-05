@@ -2,6 +2,8 @@
 
 A desktop app that checks web pages against CSS selector assertions. Create **Target Lists** (URL collections), define **Check Templates** (CSS selectors to verify), then bind them into an **Audit** to run checks across all pages — sequentially or in batches.
 
+![Screenshot](screenshot.png)
+
 Built with [Tauri v2](https://tauri.app) + [React 19](https://react.dev) + [TypeScript 6](https://www.typescriptlang.org) + [Tailwind CSS v4](https://tailwindcss.com).
 
 ## Features
