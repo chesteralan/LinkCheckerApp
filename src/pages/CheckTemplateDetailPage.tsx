@@ -19,7 +19,7 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
   )
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const dragIndex = useRef<number | null>(null)
   const dragOverIndex = useRef<number | null>(null)
 
   function addCheck() {
@@ -39,32 +39,32 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
     setDirty(true)
   }
 
-  function handleDragStart(index: number) {
-    setDragIndex(index)
+  function handleDragStart(e: React.DragEvent, index: number) {
+    e.dataTransfer.effectAllowed = 'move'
+    dragIndex.current = index
   }
 
   function handleDragOver(e: React.DragEvent, index: number) {
     e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
     dragOverIndex.current = index
   }
 
   function handleDrop() {
-    if (dragIndex === null || dragOverIndex.current === null || dragIndex === dragOverIndex.current) {
-      setDragIndex(null)
-      dragOverIndex.current = null
-      return
-    }
+    const from = dragIndex.current
+    const to = dragOverIndex.current
+    dragIndex.current = null
+    dragOverIndex.current = null
+    if (from === null || to === null || from === to) return
     const updated = [...checks]
-    const [removed] = updated.splice(dragIndex, 1)
-    updated.splice(dragOverIndex.current, 0, removed)
+    const [removed] = updated.splice(from, 1)
+    updated.splice(to, 0, removed)
     setChecks(updated)
     setDirty(true)
-    setDragIndex(null)
-    dragOverIndex.current = null
   }
 
   function handleDragEnd() {
-    setDragIndex(null)
+    dragIndex.current = null
     dragOverIndex.current = null
   }
 
@@ -105,24 +105,21 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
 
         <div className="space-y-2">
           {checks.map((check, i) => (
-            <div
-              key={i}
-              draggable
-              onDragStart={() => handleDragStart(i)}
-              onDragOver={(e) => handleDragOver(e, i)}
-              onDrop={handleDrop}
-              onDragEnd={handleDragEnd}
-              className={`flex items-center gap-2 p-3 border rounded-lg transition-colors ${
-                dragIndex === i ? 'opacity-50 border-primary' : 'border-border'
-              } ${dragOverIndex.current === i && dragIndex !== i ? 'border-t-2 border-t-primary' : ''}`}
-            >
-              <button
-                className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0 p-1"
-                title="Drag to reorder"
-                onMouseDown={(e) => e.currentTarget.parentElement?.setAttribute('draggable', 'true')}
+              <div
+                key={i}
+                draggable="true"
+                onDragStart={(e) => handleDragStart(e, i)}
+                onDragOver={(e) => handleDragOver(e, i)}
+                onDrop={handleDrop}
+                onDragEnd={handleDragEnd}
+                className="flex items-center gap-2 p-3 border border-border rounded-lg transition-colors"
               >
-                ⠿
-              </button>
+                <span
+                  className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0 p-1 select-none"
+                  title="Drag to reorder"
+                >
+                  ⠿
+                </span>
               <div className="flex-1 grid grid-cols-[1fr_1fr] gap-2">
                 <div>
                   <label className="text-xs text-muted-foreground mb-0.5 block">CSS Selector</label>
