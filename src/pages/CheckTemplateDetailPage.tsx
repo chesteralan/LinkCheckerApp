@@ -19,7 +19,7 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
   )
 
   function persist(updated: SelectorInput[]) {
-    updateCheckTemplate(template.id, { checks: updated.filter((c) => c.selector.trim() && c.label.trim()) })
+    updateCheckTemplate(template.id, { checks: updated })
   }
 
   function moveUp(index: number) {
