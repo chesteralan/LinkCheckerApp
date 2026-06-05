@@ -3,7 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
-import type { TargetList, Audit } from '@/types'
+import type { TargetList } from '@/types'
 import { normalizeUrl, readFile, scrapeLinks } from '@/lib/tauri'
 
 function resolveUrl(href: string, source: string): string {
