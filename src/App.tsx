@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Sidebar } from '@/components/Sidebar'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { TargetListsPage } from '@/pages/TargetListsPage'
 import { CheckTemplatesPage } from '@/pages/CheckTemplatesPage'
 import { CheckTemplateDetailPage } from '@/pages/CheckTemplateDetailPage'
@@ -71,6 +72,7 @@ function App() {
       <div className="flex flex-1 min-h-0">
         <Sidebar active={activePage} onNavigate={handleNavigate} />
         <main className="flex-1 overflow-y-auto p-6">
+          <ErrorBoundary>
           {quickAuditTemplate ? (
             <QuickAuditPage template={quickAuditTemplate} onBack={() => setQuickAuditTemplateId(null)} />
           ) : detailTemplate ? (
@@ -84,6 +86,7 @@ function App() {
           ) : activePage === 'history' ? (
             <RunHistoryPage />
           ) : null}
+          </ErrorBoundary>
         </main>
       </div>
       <footer className="border-t border-border px-6 py-2 bg-background shrink-0 text-xs text-muted-foreground flex items-center gap-2">
