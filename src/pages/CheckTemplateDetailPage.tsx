@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useStore } from '@/hooks/useStore'
 import type { CheckTemplate } from '@/types'
 
@@ -7,19 +6,13 @@ interface Props {
   onBack: () => void
 }
 
-interface SelectorInput {
-  selector: string
-  label: string
-}
-
 export function CheckTemplateDetailPage({ template, onBack }: Props) {
-  const { updateCheckTemplate } = useStore()
-  const [checks, setChecks] = useState<SelectorInput[]>(
-    template.checks.map((c) => ({ selector: c.selector, label: c.label }))
-  )
+  const { checkTemplates, patchCheckTemplate } = useStore()
+  const live = checkTemplates.find((ct) => ct.id === template.id) ?? template
+  const checks = live.checks
 
-  function persist(updated: SelectorInput[]) {
-    updateCheckTemplate(template.id, { checks: updated })
+  function persist(updated: { selector: string; label: string }[]) {
+    patchCheckTemplate(template.id, { checks: updated })
   }
 
   function moveUp(index: number) {
@@ -28,7 +21,6 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
     const tmp = updated[index - 1]
     updated[index - 1] = updated[index]
     updated[index] = tmp
-    setChecks(updated)
     persist(updated)
   }
 
@@ -38,26 +30,21 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
     const tmp = updated[index + 1]
     updated[index + 1] = updated[index]
     updated[index] = tmp
-    setChecks(updated)
     persist(updated)
   }
 
   function addCheck() {
-    const updated = [...checks, { selector: '', label: '' }]
-    setChecks(updated)
-    persist(updated)
+    persist([...checks, { selector: '', label: '' }])
   }
 
   function removeCheck(index: number) {
     const updated = checks.filter((_, i) => i !== index)
-    setChecks(updated)
-    if (updated.length > 0) persist(updated)
+    persist(updated)
   }
 
-  function updateCheck(index: number, field: keyof SelectorInput, value: string) {
+  function updateCheck(index: number, field: 'selector' | 'label', value: string) {
     const updated = [...checks]
     updated[index] = { ...updated[index], [field]: value }
-    setChecks(updated)
     persist(updated)
   }
 
@@ -66,7 +53,7 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="text-sm text-primary hover:underline">&larr; Templates</button>
-          <h2 className="text-2xl font-bold">{template.name}</h2>
+          <h2 className="text-2xl font-bold">{live.name}</h2>
         </div>
       </div>
 
@@ -89,7 +76,7 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
 
         <div className="space-y-2">
           {checks.map((check, i) => (
-            <div key={i} className="flex items-center gap-2 p-3 border border-border rounded-lg">
+            <div key={check.id ?? i} className="flex items-center gap-2 p-3 border border-border rounded-lg">
               <div className="flex flex-col shrink-0">
                 <button
                   onClick={() => moveUp(i)}
