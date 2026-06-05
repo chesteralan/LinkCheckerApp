@@ -5,6 +5,7 @@ import { TargetListsPage } from '@/pages/TargetListsPage'
 import { CheckTemplatesPage } from '@/pages/CheckTemplatesPage'
 import { CheckTemplateDetailPage } from '@/pages/CheckTemplateDetailPage'
 import { AuditsPage } from '@/pages/AuditsPage'
+import { AuditDetailPage } from '@/pages/AuditDetailPage'
 import { RunHistoryPage } from '@/pages/RunHistoryPage'
 import { RunDetailPage } from '@/pages/RunDetailPage'
 import { QuickAuditPage } from '@/pages/QuickAuditPage'
@@ -12,17 +13,18 @@ import { useHotkeys } from '@/hooks/useHotkeys'
 import { useStore } from '@/hooks/useStore'
 import { getDataPath } from '@/lib/tauri'
 import { openPath } from '@tauri-apps/plugin-opener'
-import type { CheckTemplate } from '@/types'
+import type { CheckTemplate, Audit } from '@/types'
 
 declare const __APP_VERSION__: string
 
 export type Page = 'target-lists' | 'check-templates' | 'audits' | 'history'
 
 function App() {
-  const { checkTemplates } = useStore()
+  const { checkTemplates, audits } = useStore()
   const [activePage, setActivePage] = useState<Page>('check-templates')
   const [quickAuditTemplateId, setQuickAuditTemplateId] = useState<string | null>(null)
   const [checkTemplateDetailId, setCheckTemplateDetailId] = useState<string | null>(null)
+  const [auditDetailId, setAuditDetailId] = useState<string | null>(null)
   const [runDetailId, setRunDetailId] = useState<string | null>(null)
   const [dataPath, setDataPath] = useState('')
 
@@ -31,17 +33,23 @@ function App() {
   }, [])
 
   useHotkeys({
-    '1': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setRunDetailId(null); setActivePage('check-templates') },
-    '2': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setRunDetailId(null); setActivePage('target-lists') },
-    '3': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setRunDetailId(null); setActivePage('audits') },
-    '4': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setRunDetailId(null); setActivePage('history') },
+    '1': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setAuditDetailId(null); setRunDetailId(null); setActivePage('check-templates') },
+    '2': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setAuditDetailId(null); setRunDetailId(null); setActivePage('target-lists') },
+    '3': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setAuditDetailId(null); setRunDetailId(null); setActivePage('audits') },
+    '4': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setAuditDetailId(null); setRunDetailId(null); setActivePage('history') },
   })
 
   function handleNavigate(page: Page) {
     setQuickAuditTemplateId(null)
     setCheckTemplateDetailId(null)
+    setAuditDetailId(null)
     setRunDetailId(null)
     setActivePage(page)
+  }
+
+  function handleViewAudit(auditId: string) {
+    setActivePage('audits')
+    setAuditDetailId(auditId)
   }
 
   function handleViewRun(runId: string) {
@@ -69,6 +77,10 @@ function App() {
     ? checkTemplates.find((ct) => ct.id === checkTemplateDetailId) ?? null
     : null
 
+  const detailAudit: Audit | null = auditDetailId
+    ? audits.find((a) => a.id === auditDetailId) ?? null
+    : null
+
   return (
     <div className="h-screen flex flex-col">
       <header className="border-b border-border px-6 py-3 bg-background shrink-0 flex items-center justify-between">
@@ -90,8 +102,10 @@ function App() {
             <TargetListsPage />
           ) : activePage === 'check-templates' ? (
             <CheckTemplatesPage onQuickAudit={handleQuickAudit} onEditTemplate={handleEditTemplate} />
+          ) : activePage === 'audits' && detailAudit ? (
+            <AuditDetailPage audit={detailAudit} onBack={() => setAuditDetailId(null)} />
           ) : activePage === 'audits' ? (
-            <AuditsPage />
+            <AuditsPage onViewAudit={handleViewAudit} />
           ) : activePage === 'history' && runDetailId ? (
             <RunDetailPage runId={runDetailId} onBack={() => setRunDetailId(null)} />
           ) : activePage === 'history' ? (
