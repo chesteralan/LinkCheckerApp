@@ -9,6 +9,9 @@ export function useHotkeys(map: HotkeyMap, enabled = true) {
   const handler = useCallback((e: KeyboardEvent) => {
     if (!enabled) return
 
+    const target = e.target as HTMLElement
+    const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable
+
     const key = [
       e.metaKey ? 'Cmd' : '',
       e.ctrlKey ? 'Ctrl' : '',
@@ -21,6 +24,7 @@ export function useHotkeys(map: HotkeyMap, enabled = true) {
 
     const action = mapRef.current[key] ?? mapRef.current[e.key]
     if (action) {
+      if (isInput && !(e.metaKey || e.ctrlKey)) return
       e.preventDefault()
       action()
     }
