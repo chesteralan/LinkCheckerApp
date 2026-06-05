@@ -171,7 +171,13 @@ pub fn list_audit_runs(state: State<'_, AppState>, audit_id: String) -> Result<V
     Ok(data.runs.iter().filter(|r| r.audit_id == audit_id).cloned().collect())
 }
 
-#[tauri::command(rename_all = "camelCase")]
+#[tauri::command]
+pub fn get_data_path(state: State<'_, AppState>) -> Result<String, String> {
+    let path = state.storage.data_path();
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 pub fn get_run_results(state: State<'_, AppState>, run_id: String) -> Result<AuditRun, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;
     data.runs

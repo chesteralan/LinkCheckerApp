@@ -66,3 +66,5 @@ export const listAuditRuns = (auditId: string) =>
   invoke<AuditRun[]>('list_audit_runs', { auditId })
 export const getRunResults = (runId: string) =>
   invoke<AuditRun>('get_run_results', { runId })
+export const getDataPath = () =>
+  invoke<string>('get_data_path')

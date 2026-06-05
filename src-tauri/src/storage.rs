@@ -10,7 +10,7 @@ impl Storage {
         Self { dir: app_dir }
     }
 
-    fn data_path(&self) -> PathBuf {
+    pub fn data_path(&self) -> PathBuf {
         self.dir.join("data.json")
     }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Sidebar } from '@/components/Sidebar'
 import { TargetListsPage } from '@/pages/TargetListsPage'
 import { CheckTemplatesPage } from '@/pages/CheckTemplatesPage'
@@ -8,6 +8,7 @@ import { RunHistoryPage } from '@/pages/RunHistoryPage'
 import { QuickAuditPage } from '@/pages/QuickAuditPage'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useStore } from '@/hooks/useStore'
+import { getDataPath } from '@/lib/tauri'
 import type { CheckTemplate } from '@/types'
 
 declare const __APP_VERSION__: string
@@ -19,6 +20,11 @@ function App() {
   const [activePage, setActivePage] = useState<Page>('check-templates')
   const [quickAuditTemplateId, setQuickAuditTemplateId] = useState<string | null>(null)
   const [checkTemplateDetailId, setCheckTemplateDetailId] = useState<string | null>(null)
+  const [dataPath, setDataPath] = useState('')
+
+  useEffect(() => {
+    getDataPath().then(setDataPath).catch(() => {})
+  }, [])
 
   useHotkeys({
     '1': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setActivePage('check-templates') },
@@ -80,6 +86,10 @@ function App() {
           ) : null}
         </main>
       </div>
+      <footer className="border-t border-border px-6 py-2 bg-background shrink-0 text-xs text-muted-foreground flex items-center gap-2">
+        <span>Data:</span>
+        <code className="text-[11px]">{dataPath || '...'}</code>
+      </footer>
     </div>
   )
 }
