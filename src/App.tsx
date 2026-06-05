@@ -90,10 +90,8 @@ function App() {
         </main>
       </div>
       <footer className="border-t border-border px-6 py-2 bg-background shrink-0 text-xs text-muted-foreground flex items-center gap-2">
-        <span>Data:</span>
-        <code className="text-[11px]">{dataPath || '...'}</code>
-        <span>/</span>
-        <span>history.json</span>
+        <span>Data Folder:</span>
+        <code className="text-[11px]">{dataPath.replace(/\/[^/]+$/, '') || '...'}</code>
       </footer>
     </div>
   )
