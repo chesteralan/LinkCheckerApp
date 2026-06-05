@@ -5,6 +5,7 @@ import { useAuditRunner } from '@/hooks/useAuditRunner'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { ProgressBar } from '@/components/ProgressBar'
 import { ResultsTable } from '@/components/ResultsTable'
+import { Modal } from '@/components/Modal'
 import { writeFile } from '@/lib/tauri'
 import type { Audit, AuditRun, PageResult } from '@/types'
 
@@ -90,11 +91,9 @@ export function AuditsPage() {
   }
 
   const handleCreateCb = useCallback(() => { if (showForm) handleCreate() }, [showForm, name, targetListId, checkTemplateId, mode, batchSize, timeoutSecs])
-  const handleResetCb = useCallback(() => { if (showForm) resetForm() }, [showForm])
   const handleRunCb = useCallback(() => { if (selectedAudit && !runner.running) handleRun() }, [selectedAudit, runner.running])
 
   useHotkeys({
-    Escape: handleResetCb,
     'Cmd+Enter': handleCreateCb,
     'Ctrl+Enter': handleCreateCb,
     'Cmd+r': handleRunCb,
@@ -178,13 +177,14 @@ function csvEscape(val: string): string {
         </button>
       </div>
 
-      {showForm && (
-        <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/20">
+      <Modal open={showForm} onClose={resetForm} title="New Audit">
+        <div className="space-y-4">
           <input
             type="text"
             placeholder="Audit name"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            autoFocus
             className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
           />
 
@@ -286,7 +286,7 @@ function csvEscape(val: string): string {
             </button>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* Audit list */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -315,7 +315,7 @@ function csvEscape(val: string): string {
             </button>
           )
         })}
-        {audits.length === 0 && !showForm && (
+        {audits.length === 0 && (
           <p className="text-muted-foreground text-sm col-span-2">
             No audits yet. Create one to get started.
           </p>
