@@ -1,3 +1,4 @@
+import { openUrl } from '@tauri-apps/plugin-opener'
 import type { PageResult, SelectorCheck } from '@/types'
 
 interface Props {
@@ -30,7 +31,12 @@ export function ResultsTable({ results, selectors }: Props) {
           {results.map((result, i) => (
             <tr key={i} className="border-b border-border hover:bg-muted/30">
               <td className="py-2 px-3 max-w-[200px] truncate font-mono text-xs" title={result.url}>
-                {result.url}
+                <button
+                  onClick={() => openUrl(result.url)}
+                  className="hover:text-primary hover:underline text-left w-full truncate"
+                >
+                  {result.url}
+                </button>
               </td>
               <td className="py-2 px-3">
                 {result.error ? (

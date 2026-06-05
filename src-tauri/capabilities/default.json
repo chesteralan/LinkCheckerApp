@@ -10,6 +10,8 @@
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",
-    "dialog:allow-message"
+    "dialog:allow-message",
+    "opener:default",
+    "opener:allow-open-url"
   ]
 }

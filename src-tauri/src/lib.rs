@@ -29,6 +29,7 @@ pub fn run() {
         }
 
         app.handle().plugin(tauri_plugin_dialog::init())?;
+        app.handle().plugin(tauri_plugin_opener::init())?;
 
             let app_dir = app
                 .path()
