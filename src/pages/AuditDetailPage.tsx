@@ -65,7 +65,7 @@ export function AuditDetailPage({ audit, onBack }: Props) {
 
   async function handleRun() {
     setActiveTab('results')
-    await runner.start(audit.id, undefined, audit.urlPostfix)
+    await runner.start(audit.id, originOverride || undefined, urlPostfix || undefined)
   }
 
   const handleRunCb = () => { if (!runner.running) handleRun() }
@@ -310,7 +310,6 @@ export function AuditDetailPage({ audit, onBack }: Props) {
                       placeholder="https://staging.example.com"
                       value={originOverride}
                       onChange={(e) => setOriginOverride(e.target.value)}
-                      onBlur={() => updateAudit(audit.id, { originOverride: originOverride || undefined })}
                       className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
                     />
                   </div>
@@ -321,7 +320,6 @@ export function AuditDetailPage({ audit, onBack }: Props) {
                       placeholder="?utm_source=test"
                       value={urlPostfix}
                       onChange={(e) => setUrlPostfix(e.target.value)}
-                      onBlur={() => updateAudit(audit.id, { urlPostfix: urlPostfix || undefined })}
                       className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
                     />
                   </div>
