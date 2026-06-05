@@ -77,6 +77,22 @@ export function useStore() {
     return updated
   }, [])
 
+  const patchCheckTemplate = useCallback((id: string, data: { name?: string; checks?: { selector: string; label: string }[] }) => {
+    setState((s) => ({
+      ...s,
+      checkTemplates: s.checkTemplates.map((ct) => {
+        if (ct.id !== id) return ct
+        const checks = data.checks?.map((c, i) => ({
+          id: ct.checks[i]?.id ?? crypto.randomUUID(),
+          selector: c.selector,
+          label: c.label,
+        })) ?? ct.checks
+        return { ...ct, checks, updatedAt: new Date().toISOString() }
+      }),
+    }))
+    api.updateCheckTemplate({ id, ...data }).catch(() => {})
+  }, [])
+
   const deleteCheckTemplate = useCallback(async (id: string) => {
     await api.deleteCheckTemplate(id)
     setState((s) => ({
@@ -118,6 +134,7 @@ export function useStore() {
     deleteTargetList,
     createCheckTemplate,
     updateCheckTemplate,
+    patchCheckTemplate,
     deleteCheckTemplate,
     createAudit,
     updateAudit,

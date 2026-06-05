@@ -83,7 +83,11 @@ pub async fn quick_run(
         updated_at: String::new(),
     };
 
-    state.checker.run(&app, &audit, &target_list, &check_template).await;
+    let run = state.checker.run(&app, &audit, &target_list, &check_template).await;
+
+    let mut history = state.history.lock().map_err(|e| e.to_string())?;
+    history.push(run);
+    state.storage.save_history(&history)?;
 
     Ok(())
 }
@@ -136,9 +140,9 @@ pub async fn run_audit(
 
     let run = state.checker.run(&app, &audit, &target_list, &check_template).await;
 
-    let mut data = state.data.lock().map_err(|e| e.to_string())?;
-    data.runs.push(run);
-    state.storage.save(&data)?;
+    let mut history = state.history.lock().map_err(|e| e.to_string())?;
+    history.push(run);
+    state.storage.save_history(&history)?;
 
     Ok(())
 }
@@ -161,22 +165,36 @@ pub fn read_file(path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn list_all_runs(state: State<'_, AppState>) -> Result<Vec<AuditRun>, String> {
-    let data = state.data.lock().map_err(|e| e.to_string())?;
-    Ok(data.runs.clone())
+    let history = state.history.lock().map_err(|e| e.to_string())?;
+    Ok(history.clone())
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn list_audit_runs(state: State<'_, AppState>, audit_id: String) -> Result<Vec<AuditRun>, String> {
-    let data = state.data.lock().map_err(|e| e.to_string())?;
-    Ok(data.runs.iter().filter(|r| r.audit_id == audit_id).cloned().collect())
+    let history = state.history.lock().map_err(|e| e.to_string())?;
+    Ok(history.iter().filter(|r| r.audit_id == audit_id).cloned().collect())
 }
 
-#[tauri::command(rename_all = "camelCase")]
+#[tauri::command]
+pub fn get_data_path(state: State<'_, AppState>) -> Result<String, String> {
+    let path = state.storage.data_path();
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 pub fn get_run_results(state: State<'_, AppState>, run_id: String) -> Result<AuditRun, String> {
-    let data = state.data.lock().map_err(|e| e.to_string())?;
-    data.runs
+    let history = state.history.lock().map_err(|e| e.to_string())?;
+    history
         .iter()
         .find(|r| r.id == run_id)
         .cloned()
         .ok_or_else(|| "Run not found".to_string())
+}
+
+#[tauri::command]
+pub fn clear_history(state: State<'_, AppState>) -> Result<(), String> {
+    let mut history = state.history.lock().map_err(|e| e.to_string())?;
+    history.clear();
+    state.storage.clear_history()?;
+    Ok(())
 }

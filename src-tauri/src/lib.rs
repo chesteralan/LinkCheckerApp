@@ -7,11 +7,12 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 use checker::Checker;
-use models::AppData;
+use models::{AppData, AuditRun};
 use storage::Storage;
 
 pub struct AppState {
     pub data: Mutex<AppData>,
+    pub history: Mutex<Vec<AuditRun>>,
     pub storage: Storage,
     pub checker: Checker,
 }
@@ -40,9 +41,11 @@ pub fn run() {
 
             let storage = Storage::new(app_dir);
             let data = storage.load();
+            let history = storage.load_history();
 
             app.manage(AppState {
                 data: Mutex::new(data),
+                history: Mutex::new(history),
                 storage,
                 checker: Checker::new(),
             });
@@ -71,6 +74,8 @@ pub fn run() {
             commands::runs::get_run_results,
             commands::runs::scrape_links,
             commands::runs::quick_run,
+            commands::runs::get_data_path,
+            commands::runs::clear_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

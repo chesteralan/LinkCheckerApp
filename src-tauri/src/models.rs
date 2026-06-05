@@ -108,7 +108,6 @@ pub struct AppData {
     pub target_lists: Vec<TargetList>,
     pub check_templates: Vec<CheckTemplate>,
     pub audits: Vec<Audit>,
-    pub runs: Vec<AuditRun>,
 }
 
 impl AppData {
@@ -117,7 +116,6 @@ impl AppData {
             target_lists: Vec::new(),
             check_templates: Vec::new(),
             audits: Vec::new(),
-            runs: Vec::new(),
         }
     }
 }
