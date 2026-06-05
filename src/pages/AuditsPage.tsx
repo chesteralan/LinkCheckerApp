@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
-import type { Audit } from '@/types'
 
 const modes = [
   { value: 'sequential', label: 'Sequential (1 at a time)' },
@@ -22,8 +21,6 @@ export function AuditsPage({ onViewAudit }: Props) {
   const [mode, setMode] = useState<'sequential' | 'batch'>('batch')
   const [batchSize, setBatchSize] = useState(5)
   const [timeoutSecs, setTimeoutSecs] = useState(10)
-  const [originOverride, setOriginOverride] = useState('')
-  const [urlPostfix, setUrlPostfix] = useState('')
 
   function resetForm() {
     setName('')
@@ -32,8 +29,6 @@ export function AuditsPage({ onViewAudit }: Props) {
     setMode('batch')
     setBatchSize(5)
     setTimeoutSecs(10)
-    setOriginOverride('')
-    setUrlPostfix('')
     setShowForm(false)
   }
 
@@ -43,7 +38,7 @@ export function AuditsPage({ onViewAudit }: Props) {
       mode,
       batchSize,
       timeoutSecs,
-    }, originOverride || undefined, urlPostfix || undefined)
+    })
     resetForm()
   }
 
@@ -149,26 +144,6 @@ export function AuditsPage({ onViewAudit }: Props) {
                 value={timeoutSecs}
                 onChange={(e) => setTimeoutSecs(Number(e.target.value))}
                 className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-            <div>
-              <label className="text-sm text-muted-foreground block mb-1">Origin Override (optional)</label>
-              <input
-                type="text"
-                placeholder="https://staging.example.com"
-                value={originOverride}
-                onChange={(e) => setOriginOverride(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
-              />
-            </div>
-            <div>
-              <label className="text-sm text-muted-foreground block mb-1">URL Postfix (optional)</label>
-              <input
-                type="text"
-                placeholder="?utm_source=test"
-                value={urlPostfix}
-                onChange={(e) => setUrlPostfix(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
               />
             </div>
           </div>
