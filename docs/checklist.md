@@ -25,18 +25,19 @@
 - [x] Cancellation via AtomicBool
 - [x] Tauri event emission (run:result, run:progress, run:complete)
 
-## Phase 4 — Frontend: Pages ⬜
-- [ ] Sidebar navigation layout
-- [ ] TargetListsPage — list, create, edit, delete
-- [ ] CheckTemplatesPage — list, create, edit selectors
-- [ ] AuditsPage — bind lists + templates, run config
-- [ ] Run button + progress display
-- [ ] Results table with per-selector details
-- [ ] RunHistoryPage — past runs
+## Phase 4 — Frontend: Pages ✅
+- [x] Sidebar navigation layout
+- [x] TargetListsPage — list, create, edit, delete
+- [x] CheckTemplatesPage — list, create, edit selectors
+- [x] AuditsPage — bind lists + templates, run config
+- [x] Run button + progress display
+- [x] Results table with per-selector details
+- [x] ProgressBar component
 
 ## Phase 5 — Polish ⬜
+- [ ] RunHistoryPage — past runs
 - [ ] URL normalisation (auto-add https://)
 - [ ] CSV export
 - [ ] File import for URLs
 - [ ] Keyboard shortcuts
-- [ ] Persist last-used config
+- [ ] Clean up unused Vite scaffold assets
