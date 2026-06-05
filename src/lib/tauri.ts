@@ -68,3 +68,5 @@ export const getRunResults = (runId: string) =>
   invoke<AuditRun>('get_run_results', { runId })
 export const getDataPath = () =>
   invoke<string>('get_data_path')
+export const clearHistory = () =>
+  invoke<void>('clear_history')

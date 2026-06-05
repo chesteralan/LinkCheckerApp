@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '@/hooks/useStore'
-import { listAllRuns } from '@/lib/tauri'
+import { listAllRuns, clearHistory } from '@/lib/tauri'
 import type { AuditRun } from '@/types'
 
 export function RunHistoryPage() {
@@ -8,11 +8,19 @@ export function RunHistoryPage() {
   const [runs, setRuns] = useState<AuditRun[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  function load() {
+    setLoading(true)
     listAllRuns()
       .then(setRuns)
       .finally(() => setLoading(false))
-  }, [])
+  }
+
+  useEffect(load, [])
+
+  async function handleClear() {
+    await clearHistory()
+    setRuns([])
+  }
 
   if (loading) {
     return <div className="text-muted-foreground">Loading...</div>
@@ -33,7 +41,15 @@ export function RunHistoryPage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold">Run History</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">Run History</h2>
+        <button
+          onClick={handleClear}
+          className="px-3 py-1.5 text-sm border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
+        >
+          Clear History
+        </button>
+      </div>
 
       <div className="space-y-3">
         {sorted.map((run) => {
