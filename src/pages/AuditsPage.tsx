@@ -226,7 +226,7 @@ function csvEscape(val: string): string {
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm text-muted-foreground block mb-1">Mode</label>
               <select
@@ -409,7 +409,7 @@ function csvEscape(val: string): string {
                       onChange={(e) => setEditName(e.target.value)}
                       className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                     />
-                    <div className="grid grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm text-muted-foreground block mb-1">Mode</label>
                         <select
