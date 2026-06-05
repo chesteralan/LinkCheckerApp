@@ -48,11 +48,11 @@ export function AuditDetailPage({ audit, onBack }: Props) {
     await updateAudit(audit.id, {
       name: editName,
       config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs },
-      originOverride: editOriginOverride || undefined,
-      urlPostfix: editUrlPostfix || undefined,
+      originOverride: editOriginOverride,
+      urlPostfix: editUrlPostfix,
     })
-    setOriginOverride(editOriginOverride || '')
-    setUrlPostfix(editUrlPostfix || '')
+    setOriginOverride(editOriginOverride)
+    setUrlPostfix(editUrlPostfix)
     setEditing(false)
   }
 
