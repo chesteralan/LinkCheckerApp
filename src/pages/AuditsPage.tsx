@@ -27,6 +27,7 @@ export function AuditsPage() {
   const [batchSize, setBatchSize] = useState(5)
   const [timeoutSecs, setTimeoutSecs] = useState(10)
   const [originOverride, setOriginOverride] = useState('')
+  const [urlPostfix, setUrlPostfix] = useState('')
   const [selectedAudit, setSelectedAudit] = useState<Audit | null>(null)
   const [activeTab, setActiveTab] = useState<AuditTab>('overview')
   const [editingAudit, setEditingAudit] = useState(false)
@@ -35,6 +36,7 @@ export function AuditsPage() {
   const [editBatchSize, setEditBatchSize] = useState(5)
   const [editTimeoutSecs, setEditTimeoutSecs] = useState(10)
   const [editOriginOverride, setEditOriginOverride] = useState('')
+  const [editUrlPostfix, setEditUrlPostfix] = useState('')
 
   function resetForm() {
     setName('')
@@ -44,6 +46,7 @@ export function AuditsPage() {
     setBatchSize(5)
     setTimeoutSecs(10)
     setOriginOverride('')
+    setUrlPostfix('')
     setShowForm(false)
   }
 
@@ -60,6 +63,7 @@ export function AuditsPage() {
     setEditBatchSize(selectedAudit.config.batchSize)
     setEditTimeoutSecs(selectedAudit.config.timeoutSecs)
     setEditOriginOverride(selectedAudit.originOverride ?? '')
+    setEditUrlPostfix(selectedAudit.urlPostfix ?? '')
     setEditingAudit(true)
   }
 
@@ -69,8 +73,9 @@ export function AuditsPage() {
       name: editName,
       config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs },
       originOverride: editOriginOverride || undefined,
+      urlPostfix: editUrlPostfix || undefined,
     })
-    setSelectedAudit((prev) => prev ? { ...prev, name: editName, config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs }, originOverride: editOriginOverride || undefined } : null)
+    setSelectedAudit((prev) => prev ? { ...prev, name: editName, config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs }, originOverride: editOriginOverride || undefined, urlPostfix: editUrlPostfix || undefined } : null)
     setEditingAudit(false)
   }
 
@@ -80,14 +85,14 @@ export function AuditsPage() {
       mode,
       batchSize,
       timeoutSecs,
-    }, originOverride || undefined)
+    }, originOverride || undefined, urlPostfix || undefined)
     resetForm()
   }
 
   async function handleRun() {
     if (!selectedAudit) return
     setActiveTab('results')
-    await runner.start(selectedAudit.id)
+    await runner.start(selectedAudit.id, undefined, selectedAudit.urlPostfix)
   }
 
   const handleCreateCb = useCallback(() => { if (showForm) handleCreate() }, [showForm, name, targetListId, checkTemplateId, mode, batchSize, timeoutSecs])
@@ -268,6 +273,16 @@ function csvEscape(val: string): string {
                 className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
               />
             </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">URL Postfix (optional)</label>
+              <input
+                type="text"
+                placeholder="?utm_source=test"
+                value={urlPostfix}
+                onChange={(e) => setUrlPostfix(e.target.value)}
+                className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
+              />
+            </div>
           </div>
 
           <div className="flex gap-2">
@@ -311,6 +326,7 @@ function csvEscape(val: string): string {
                 {audit.config.mode === 'sequential' ? 'Sequential' : `Batch x${audit.config.batchSize}`}
                 {' · '}{audit.config.timeoutSecs}s timeout
                 {audit.originOverride && ` · ${audit.originOverride}`}
+                {audit.urlPostfix && ` · +${audit.urlPostfix}`}
               </p>
             </button>
           )
@@ -334,6 +350,9 @@ function csvEscape(val: string): string {
                 {selectedCheckTemplate?.name ?? 'Unknown'} · {selectedCheckTemplate?.checks.length ?? 0} selectors
                 {selectedAudit.originOverride && (
                   <> · Origin: <span className="font-mono text-xs">{selectedAudit.originOverride}</span></>
+                )}
+                {selectedAudit.urlPostfix && (
+                  <> · Postfix: <span className="font-mono text-xs">{selectedAudit.urlPostfix}</span></>
                 )}
               </p>
             </div>
@@ -436,6 +455,16 @@ function csvEscape(val: string): string {
                           className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
                         />
                       </div>
+                      <div>
+                        <label className="text-sm text-muted-foreground block mb-1">URL Postfix</label>
+                        <input
+                          type="text"
+                          placeholder="?utm_source=test"
+                          value={editUrlPostfix}
+                          onChange={(e) => setEditUrlPostfix(e.target.value)}
+                          className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
+                        />
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -479,19 +508,35 @@ function csvEscape(val: string): string {
                       </div>
                     )}
                     <div className="space-y-3 pt-2">
-                      <div>
-                        <label className="text-sm text-muted-foreground block mb-1">Origin Override (optional)</label>
-                        <input
-                          type="text"
-                          placeholder="https://staging.example.com"
-                          value={selectedAudit.originOverride ?? ''}
-                          onChange={async (e) => {
-                            const val = e.target.value
-                            await updateAudit(selectedAudit.id, { originOverride: val || undefined })
-                            setSelectedAudit((prev) => prev ? { ...prev, originOverride: val || undefined } : null)
-                          }}
-                          className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
-                        />
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-sm text-muted-foreground block mb-1">Origin Override (optional)</label>
+                          <input
+                            type="text"
+                            placeholder="https://staging.example.com"
+                            value={selectedAudit.originOverride ?? ''}
+                            onChange={async (e) => {
+                              const val = e.target.value
+                              await updateAudit(selectedAudit.id, { originOverride: val || undefined })
+                              setSelectedAudit((prev) => prev ? { ...prev, originOverride: val || undefined } : null)
+                            }}
+                            className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm text-muted-foreground block mb-1">URL Postfix (optional)</label>
+                          <input
+                            type="text"
+                            placeholder="?utm_source=test"
+                            value={selectedAudit.urlPostfix ?? ''}
+                            onChange={async (e) => {
+                              const val = e.target.value
+                              await updateAudit(selectedAudit.id, { urlPostfix: val || undefined })
+                              setSelectedAudit((prev) => prev ? { ...prev, urlPostfix: val || undefined } : null)
+                            }}
+                            className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
+                          />
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         {runner.running ? (

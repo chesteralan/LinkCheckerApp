@@ -28,6 +28,7 @@ pub fn create_audit(
     check_template_id: String,
     config: AuditConfigInput,
     origin_override: Option<String>,
+    url_postfix: Option<String>,
 ) -> Result<Audit, String> {
     let audit = Audit {
         id: Uuid::new_v4().to_string(),
@@ -40,6 +41,7 @@ pub fn create_audit(
             timeout_secs: config.timeout_secs,
         },
         origin_override: origin_override.filter(|o| !o.is_empty()),
+        url_postfix: url_postfix.filter(|p| !p.is_empty()),
         created_at: Utc::now().to_rfc3339(),
     };
 
@@ -57,6 +59,7 @@ pub fn update_audit(
     name: Option<String>,
     config: Option<AuditConfigInput>,
     origin_override: Option<String>,
+    url_postfix: Option<String>,
 ) -> Result<Audit, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
 
@@ -78,6 +81,9 @@ pub fn update_audit(
     }
     if let Some(oo) = origin_override {
         audit.origin_override = if oo.is_empty() { None } else { Some(oo) };
+    }
+    if let Some(up) = url_postfix {
+        audit.url_postfix = if up.is_empty() { None } else { Some(up) };
     }
 
     let result = audit.clone();

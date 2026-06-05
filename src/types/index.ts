@@ -33,6 +33,7 @@ export interface Audit {
   checkTemplateId: string
   config: AuditConfig
   originOverride?: string
+  urlPostfix?: string
   createdAt: string
 }
 

@@ -10,6 +10,7 @@ pub async fn run_audit(
     state: State<'_, AppState>,
     audit_id: String,
     origin_override: Option<String>,
+    url_postfix: Option<String>,
 ) -> Result<(), String> {
     let (mut audit, target_list, check_template) = {
         let data = state.data.lock().map_err(|e| e.to_string())?;
@@ -41,6 +42,11 @@ pub async fn run_audit(
     if let Some(ref oo) = origin_override {
         if !oo.is_empty() {
             audit.origin_override = Some(oo.clone());
+        }
+    }
+    if let Some(ref up) = url_postfix {
+        if !up.is_empty() {
+            audit.url_postfix = Some(up.clone());
         }
     }
 

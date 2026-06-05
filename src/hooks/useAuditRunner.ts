@@ -28,7 +28,7 @@ export function useAuditRunner() {
     return () => { cleanup() }
   }, [cleanup])
 
-  const start = useCallback(async (auditId: string, originOverride?: string) => {
+  const start = useCallback(async (auditId: string, originOverride?: string, urlPostfix?: string) => {
     setState({ running: true, run: null, progress: null })
 
     const unlistenResult = await listen<PageResult>('run:result', (event) => {
@@ -79,7 +79,7 @@ export function useAuditRunner() {
       unlistenError,
     ]
 
-    await runAudit(auditId, originOverride)
+    await runAudit(auditId, originOverride, urlPostfix)
   }, [cleanup])
 
   const cancel = useCallback(async () => {

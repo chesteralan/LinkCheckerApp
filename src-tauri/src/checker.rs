@@ -55,6 +55,7 @@ impl Checker {
             .urls
             .iter()
             .map(|u| apply_origin_override(u, &audit.origin_override))
+            .map(|u| apply_url_postfix(&u, &audit.url_postfix))
             .collect();
         let checks = check_template.checks.clone();
 
@@ -231,6 +232,13 @@ fn extract_title(html: &str) -> Option<String> {
         .select(&selector)
         .next()
         .map(|el| el.text().collect::<String>().trim().to_string())
+}
+
+fn apply_url_postfix(url: &str, postfix: &Option<String>) -> String {
+    match postfix {
+        Some(p) if !p.is_empty() => format!("{}{}", url, p),
+        _ => url.to_string(),
+    }
 }
 
 fn apply_origin_override(url: &str, origin_override: &Option<String>) -> String {

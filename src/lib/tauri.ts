@@ -35,9 +35,9 @@ export const deleteCheckTemplate = (id: string) =>
 
 // Audits
 export const listAudits = () => invoke<Audit[]>('list_audits')
-export const createAudit = (data: { name: string; targetListId: string; checkTemplateId: string; config: { mode: string; batchSize: number; timeoutSecs: number }; originOverride?: string }) =>
+export const createAudit = (data: { name: string; targetListId: string; checkTemplateId: string; config: { mode: string; batchSize: number; timeoutSecs: number }; originOverride?: string; urlPostfix?: string }) =>
   invoke<Audit>('create_audit', data)
-export const updateAudit = (data: { id: string; name?: string; config?: { mode: string; batchSize: number; timeoutSecs: number }; originOverride?: string }) =>
+export const updateAudit = (data: { id: string; name?: string; config?: { mode: string; batchSize: number; timeoutSecs: number }; originOverride?: string; urlPostfix?: string }) =>
   invoke<Audit>('update_audit', data)
 export const deleteAudit = (id: string) =>
   invoke<void>('delete_audit', { id })
@@ -50,8 +50,8 @@ export const readFile = (path: string) =>
 
 // Runs
 export const listAllRuns = () => invoke<AuditRun[]>('list_all_runs')
-export const runAudit = (auditId: string, originOverride?: string) =>
-  invoke<void>('run_audit', { auditId, originOverride })
+export const runAudit = (auditId: string, originOverride?: string, urlPostfix?: string) =>
+  invoke<void>('run_audit', { auditId, originOverride, urlPostfix })
 export const cancelRun = () =>
   invoke<void>('cancel_run')
 export const listAuditRuns = (auditId: string) =>
