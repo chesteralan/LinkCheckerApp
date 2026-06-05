@@ -9,20 +9,33 @@ interface Props {
 }
 
 export function CheckTemplatesPage({ onQuickAudit, onEditTemplate }: Props) {
-  const { checkTemplates, loading, createCheckTemplate, deleteCheckTemplate } = useStore()
+  const { checkTemplates, loading, createCheckTemplate, updateCheckTemplate, deleteCheckTemplate } = useStore()
   const [name, setName] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [editingRename, setEditingRename] = useState<{ id: string; name: string } | null>(null)
 
   function resetForm() {
     setName('')
     setShowForm(false)
+    setEditingRename(null)
+  }
+
+  function openRename(template: { id: string; name: string }) {
+    setEditingRename(template)
+    setName(template.name)
+    setShowForm(true)
   }
 
   async function handleSave() {
     if (!name.trim()) return
-    const created = await createCheckTemplate(name.trim(), [])
-    resetForm()
-    onEditTemplate?.(created.id)
+    if (editingRename) {
+      await updateCheckTemplate(editingRename.id, { name: name.trim() })
+      resetForm()
+    } else {
+      const created = await createCheckTemplate(name.trim(), [])
+      resetForm()
+      onEditTemplate?.(created.id)
+    }
   }
 
   async function handleDelete(id: string) {
@@ -52,7 +65,7 @@ export function CheckTemplatesPage({ onQuickAudit, onEditTemplate }: Props) {
         </button>
       </div>
 
-      <Modal open={showForm} onClose={resetForm} title="New Check Template">
+      <Modal open={showForm} onClose={resetForm} title={editingRename ? 'Rename Template' : 'New Check Template'}>
         <div className="space-y-4">
           <input
             type="text"
@@ -68,7 +81,7 @@ export function CheckTemplatesPage({ onQuickAudit, onEditTemplate }: Props) {
               disabled={!name.trim()}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
             >
-              Create
+              {editingRename ? 'Save' : 'Create'}
             </button>
             <button
               onClick={resetForm}
@@ -122,10 +135,16 @@ export function CheckTemplatesPage({ onQuickAudit, onEditTemplate }: Props) {
                 </button>
               )}
               <button
+                onClick={() => openRename(template)}
+                className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
+              >
+                Edit
+              </button>
+              <button
                 onClick={() => onEditTemplate?.(template.id)}
                 className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
               >
-                Edit Selectors
+                Selectors
               </button>
               <button
                 onClick={() => handleDelete(template.id)}
