@@ -105,26 +105,24 @@ export function CheckTemplatesPage() {
               </button>
             </div>
             {checks.map((check, i) => (
-              <div key={i} className="flex gap-2 items-start">
-                <div className="flex-1 space-y-1">
-                  <input
-                    type="text"
-                    placeholder="CSS selector, e.g. .login-form"
-                    value={check.selector}
-                    onChange={(e) => updateCheck(i, 'selector', e.target.value)}
-                    className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Label, e.g. Login form exists"
-                    value={check.label}
-                    onChange={(e) => updateCheck(i, 'label', e.target.value)}
-                    className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
+              <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start">
+                <input
+                  type="text"
+                  placeholder="CSS selector, e.g. .login-form"
+                  value={check.selector}
+                  onChange={(e) => updateCheck(i, 'selector', e.target.value)}
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <input
+                  type="text"
+                  placeholder="Label, e.g. Login form exists"
+                  value={check.label}
+                  onChange={(e) => updateCheck(i, 'label', e.target.value)}
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                />
                 <button
                   onClick={() => removeCheck(i)}
-                  className="mt-1 p-2 text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                  className="p-2 text-destructive hover:bg-destructive/10 rounded-md transition-colors"
                   title="Remove selector"
                 >
                   ✕
