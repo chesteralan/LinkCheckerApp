@@ -28,7 +28,7 @@ export function useAuditRunner() {
     return () => { cleanup() }
   }, [cleanup])
 
-  const start = useCallback(async (auditId: string) => {
+  const start = useCallback(async (auditId: string, originOverride?: string) => {
     setState({ running: true, run: null, progress: null })
 
     const unlistenResult = await listen<PageResult>('run:result', (event) => {
@@ -36,7 +36,15 @@ export function useAuditRunner() {
         ...s,
         run: s.run
           ? { ...s.run, results: [...s.run.results, event.payload] }
-          : null,
+          : {
+              id: '',
+              auditId,
+              startedAt: new Date().toISOString(),
+              completedAt: null,
+              status: 'running',
+              results: [event.payload],
+              summary: { total: 0, passed: 0, failed: 0, errored: 0, avgResponseTimeMs: 0 },
+            },
       }))
     })
 
@@ -71,7 +79,7 @@ export function useAuditRunner() {
       unlistenError,
     ]
 
-    await runAudit(auditId)
+    await runAudit(auditId, originOverride)
   }, [cleanup])
 
   const cancel = useCallback(async () => {

@@ -9,8 +9,9 @@ pub async fn run_audit(
     app: AppHandle,
     state: State<'_, AppState>,
     audit_id: String,
+    origin_override: Option<String>,
 ) -> Result<(), String> {
-    let (audit, target_list, check_template) = {
+    let (mut audit, target_list, check_template) = {
         let data = state.data.lock().map_err(|e| e.to_string())?;
 
         let audit = data
@@ -36,6 +37,12 @@ pub async fn run_audit(
 
         (audit, target_list, check_template)
     };
+
+    if let Some(ref oo) = origin_override {
+        if !oo.is_empty() {
+            audit.origin_override = Some(oo.clone());
+        }
+    }
 
     let run = state.checker.run(&app, &audit, &target_list, &check_template).await;
 

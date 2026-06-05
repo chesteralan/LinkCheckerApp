@@ -6,7 +6,7 @@ import { useHotkeys } from '@/hooks/useHotkeys'
 import { ProgressBar } from '@/components/ProgressBar'
 import { ResultsTable } from '@/components/ResultsTable'
 import { writeFile } from '@/lib/tauri'
-import type { Audit, AuditRun } from '@/types'
+import type { Audit, AuditRun, PageResult } from '@/types'
 
 const modes = [
   { value: 'sequential', label: 'Sequential (1 at a time)' },
@@ -138,7 +138,24 @@ export function AuditsPage() {
     await writeFile(path, content)
   }
 
-  function csvEscape(val: string): string {
+  function LiveSummary({ results }: { results: PageResult[] }) {
+  const passed = results.filter((r) => !r.error && r.checks.every((c) => c.found)).length
+  const failed = results.filter((r) => !r.error && r.checks.some((c) => !c.found)).length
+  const errored = results.filter((r) => r.error).length
+  const totalMs = results.reduce((s, r) => s + (r.responseTimeMs ?? 0), 0)
+  const avg = results.length > 0 ? Math.round(totalMs / results.length) : 0
+
+  return (
+    <div className="flex gap-4 text-sm">
+      <span className="text-success">✓ {passed} passed</span>
+      <span className="text-destructive">✗ {failed} failed</span>
+      <span className="text-muted-foreground">⚠ {errored} errored</span>
+      <span className="text-muted-foreground">avg {avg}ms</span>
+    </div>
+  )
+}
+
+function csvEscape(val: string): string {
     if (val.includes(',') || val.includes('"') || val.includes('\n')) {
       return `"${val.replace(/"/g, '""')}"`
     }
@@ -461,22 +478,38 @@ export function AuditsPage() {
                         </div>
                       </div>
                     )}
-                    <div className="flex gap-2 pt-2">
-                      {runner.running ? (
-                        <button
-                          onClick={runner.cancel}
-                          className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
-                        >
-                          Cancel Run
-                        </button>
-                      ) : (
-                        <button
-                          onClick={handleRun}
-                          className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
-                        >
-                          Run Audit
-                        </button>
-                      )}
+                    <div className="space-y-3 pt-2">
+                      <div>
+                        <label className="text-sm text-muted-foreground block mb-1">Origin Override (optional)</label>
+                        <input
+                          type="text"
+                          placeholder="https://staging.example.com"
+                          value={selectedAudit.originOverride ?? ''}
+                          onChange={async (e) => {
+                            const val = e.target.value
+                            await updateAudit(selectedAudit.id, { originOverride: val || undefined })
+                            setSelectedAudit((prev) => prev ? { ...prev, originOverride: val || undefined } : null)
+                          }}
+                          className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        {runner.running ? (
+                          <button
+                            onClick={runner.cancel}
+                            className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
+                          >
+                            Cancel Run
+                          </button>
+                        ) : (
+                          <button
+                            onClick={handleRun}
+                            className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
+                          >
+                            Run Audit
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </>
                 )}
@@ -496,26 +529,21 @@ export function AuditsPage() {
                   </div>
                 )}
 
-                {runner.run && (
+                {(runner.run || runner.running) && (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="flex gap-4 text-sm">
-                        <span className="text-success">✓ {runner.run.summary.passed} passed</span>
-                        <span className="text-destructive">✗ {runner.run.summary.failed} failed</span>
-                        <span className="text-muted-foreground">⚠ {runner.run.summary.errored} errored</span>
-                        <span className="text-muted-foreground">
-                          avg {Math.round(runner.run.summary.avgResponseTimeMs)}ms
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => exportCsv(runner.run!, selectedCheckTemplate?.checks ?? [])}
-                        className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
-                      >
-                        Export CSV
-                      </button>
+                      <LiveSummary results={runner.run?.results ?? []} />
+                      {runner.run && !runner.running && (
+                        <button
+                          onClick={() => exportCsv(runner.run!, selectedCheckTemplate?.checks ?? [])}
+                          className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
+                        >
+                          Export CSV
+                        </button>
+                      )}
                     </div>
                     <ResultsTable
-                      results={runner.run.results}
+                      results={runner.run?.results ?? []}
                       selectors={selectedCheckTemplate?.checks ?? []}
                     />
                   </div>

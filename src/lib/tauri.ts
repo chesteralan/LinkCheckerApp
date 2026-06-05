@@ -50,8 +50,8 @@ export const readFile = (path: string) =>
 
 // Runs
 export const listAllRuns = () => invoke<AuditRun[]>('list_all_runs')
-export const runAudit = (auditId: string) =>
-  invoke<void>('run_audit', { auditId })
+export const runAudit = (auditId: string, originOverride?: string) =>
+  invoke<void>('run_audit', { auditId, originOverride })
 export const cancelRun = () =>
   invoke<void>('cancel_run')
 export const listAuditRuns = (auditId: string) =>
