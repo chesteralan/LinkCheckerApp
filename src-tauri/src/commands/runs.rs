@@ -4,7 +4,7 @@ use tauri::{AppHandle, State};
 use crate::models::AuditRun;
 use crate::AppState;
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn run_audit(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -68,13 +68,13 @@ pub fn list_all_runs(state: State<'_, AppState>) -> Result<Vec<AuditRun>, String
     Ok(data.runs.clone())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn list_audit_runs(state: State<'_, AppState>, audit_id: String) -> Result<Vec<AuditRun>, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;
     Ok(data.runs.iter().filter(|r| r.audit_id == audit_id).cloned().collect())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn get_run_results(state: State<'_, AppState>, run_id: String) -> Result<AuditRun, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;
     data.runs

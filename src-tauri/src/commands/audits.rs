@@ -7,6 +7,7 @@ use crate::models::{Audit, AuditConfig};
 use crate::AppState;
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditConfigInput {
     pub mode: String,
     pub batch_size: u32,
@@ -19,7 +20,7 @@ pub fn list_audits(state: State<'_, AppState>) -> Result<Vec<Audit>, String> {
     Ok(data.audits.clone())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn create_audit(
     state: State<'_, AppState>,
     name: String,
