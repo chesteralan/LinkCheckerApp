@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { useStore } from '@/hooks/useStore'
 import type { CheckTemplate } from '@/types'
 
@@ -19,8 +19,26 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
   )
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
-  const dragIndex = useRef<number | null>(null)
-  const dragOverIndex = useRef<number | null>(null)
+
+  function moveUp(index: number) {
+    if (index === 0) return
+    const updated = [...checks]
+    const tmp = updated[index - 1]
+    updated[index - 1] = updated[index]
+    updated[index] = tmp
+    setChecks(updated)
+    setDirty(true)
+  }
+
+  function moveDown(index: number) {
+    if (index === checks.length - 1) return
+    const updated = [...checks]
+    const tmp = updated[index + 1]
+    updated[index + 1] = updated[index]
+    updated[index] = tmp
+    setChecks(updated)
+    setDirty(true)
+  }
 
   function addCheck() {
     setChecks([...checks, { selector: '', label: '' }])
@@ -37,35 +55,6 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
     updated[index] = { ...updated[index], [field]: value }
     setChecks(updated)
     setDirty(true)
-  }
-
-  function handleDragStart(e: React.DragEvent, index: number) {
-    e.dataTransfer.effectAllowed = 'move'
-    dragIndex.current = index
-  }
-
-  function handleDragOver(e: React.DragEvent, index: number) {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    dragOverIndex.current = index
-  }
-
-  function handleDrop() {
-    const from = dragIndex.current
-    const to = dragOverIndex.current
-    dragIndex.current = null
-    dragOverIndex.current = null
-    if (from === null || to === null || from === to) return
-    const updated = [...checks]
-    const [removed] = updated.splice(from, 1)
-    updated.splice(to, 0, removed)
-    setChecks(updated)
-    setDirty(true)
-  }
-
-  function handleDragEnd() {
-    dragIndex.current = null
-    dragOverIndex.current = null
   }
 
   async function handleSave() {
@@ -105,21 +94,21 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
 
         <div className="space-y-2">
           {checks.map((check, i) => (
-              <div
-                key={i}
-                draggable="true"
-                onDragStart={(e) => handleDragStart(e, i)}
-                onDragOver={(e) => handleDragOver(e, i)}
-                onDrop={handleDrop}
-                onDragEnd={handleDragEnd}
-                className="flex items-center gap-2 p-3 border border-border rounded-lg transition-colors"
-              >
-                <span
-                  className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0 p-1 select-none"
-                  title="Drag to reorder"
-                >
-                  ⠿
-                </span>
+            <div key={i} className="flex items-center gap-2 p-3 border border-border rounded-lg">
+              <div className="flex flex-col shrink-0">
+                <button
+                  onClick={() => moveUp(i)}
+                  disabled={i === 0}
+                  className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-default"
+                  title="Move up"
+                >▲</button>
+                <button
+                  onClick={() => moveDown(i)}
+                  disabled={i === checks.length - 1}
+                  className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-default"
+                  title="Move down"
+                >▼</button>
+              </div>
               <div className="flex-1 grid grid-cols-[1fr_1fr] gap-2">
                 <div>
                   <label className="text-xs text-muted-foreground mb-0.5 block">CSS Selector</label>
