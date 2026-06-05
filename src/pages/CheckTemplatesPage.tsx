@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useStore } from '@/hooks/useStore'
+import { useHotkeys } from '@/hooks/useHotkeys'
 import type { CheckTemplate } from '@/types'
 
 interface SelectorInput {
@@ -57,6 +58,15 @@ export function CheckTemplatesPage() {
   async function handleDelete(id: string) {
     await deleteCheckTemplate(id)
   }
+
+  const handleSaveCb = useCallback(() => { if (showForm) handleSave() }, [showForm, name, checks, editing])
+  const handleResetCb = useCallback(() => { if (showForm) resetForm() }, [showForm])
+
+  useHotkeys({
+    Escape: handleResetCb,
+    'Cmd+Enter': handleSaveCb,
+    'Ctrl+Enter': handleSaveCb,
+  }, showForm)
 
   if (loading) {
     return <div className="text-muted-foreground">Loading...</div>

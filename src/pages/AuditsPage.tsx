@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { save } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useAuditRunner } from '@/hooks/useAuditRunner'
+import { useHotkeys } from '@/hooks/useHotkeys'
 import { ProgressBar } from '@/components/ProgressBar'
 import { ResultsTable } from '@/components/ResultsTable'
 import { writeFile } from '@/lib/tauri'
@@ -57,6 +58,18 @@ export function AuditsPage() {
     setActiveTab('results')
     await runner.start(selectedAudit.id)
   }
+
+  const handleCreateCb = useCallback(() => { if (showForm) handleCreate() }, [showForm, name, targetListId, checkTemplateId, mode, batchSize, timeoutSecs])
+  const handleResetCb = useCallback(() => { if (showForm) resetForm() }, [showForm])
+  const handleRunCb = useCallback(() => { if (selectedAudit && !runner.running) handleRun() }, [selectedAudit, runner.running])
+
+  useHotkeys({
+    Escape: handleResetCb,
+    'Cmd+Enter': handleCreateCb,
+    'Ctrl+Enter': handleCreateCb,
+    'Cmd+r': handleRunCb,
+    'Ctrl+r': handleRunCb,
+  }, showForm || !!selectedAudit)
 
   const selectedTargetList = selectedAudit
     ? targetLists.find((tl) => tl.id === selectedAudit.targetListId)

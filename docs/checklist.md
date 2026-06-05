@@ -41,4 +41,4 @@
 - [x] Update README.md
 - [x] CSV export
 - [x] File import for URLs (txt/csv)
-- [ ] Keyboard shortcuts
+- [x] Keyboard shortcuts (Escape, Cmd+Enter, Cmd+R, 1-4 nav)

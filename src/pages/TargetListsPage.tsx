@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
+import { useHotkeys } from '@/hooks/useHotkeys'
 import type { TargetList } from '@/types'
 import { normalizeUrl, readFile } from '@/lib/tauri'
 
@@ -42,6 +43,15 @@ export function TargetListsPage() {
   async function handleDelete(id: string) {
     await deleteTargetList(id)
   }
+
+  const handleSaveCb = useCallback(() => { if (showForm) handleSave() }, [showForm, name, urlsText, editing])
+  const handleResetCb = useCallback(() => { if (showForm) resetForm() }, [showForm])
+
+  useHotkeys({
+    Escape: handleResetCb,
+    'Cmd+Enter': handleSaveCb,
+    'Ctrl+Enter': handleSaveCb,
+  }, showForm)
 
   if (loading) {
     return <div className="text-muted-foreground">Loading...</div>
