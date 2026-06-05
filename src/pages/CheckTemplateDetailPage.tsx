@@ -58,11 +58,6 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
     const updated = [...checks]
     updated[index] = { ...updated[index], [field]: value }
     setChecks(updated)
-  }
-
-  function saveCheck(index: number) {
-    const updated = [...checks]
-    if (!updated[index].selector.trim() || !updated[index].label.trim()) return
     persist(updated)
   }
 
@@ -117,7 +112,6 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
                     placeholder="e.g. .login-form"
                     value={check.selector}
                     onChange={(e) => updateCheck(i, 'selector', e.target.value)}
-                    onBlur={() => saveCheck(i)}
                     className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
@@ -128,7 +122,6 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
                     placeholder="e.g. Login form exists"
                     value={check.label}
                     onChange={(e) => updateCheck(i, 'label', e.target.value)}
-                    onBlur={() => saveCheck(i)}
                     className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
