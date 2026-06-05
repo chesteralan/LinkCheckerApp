@@ -3,7 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
-import type { TargetList } from '@/types'
+import type { TargetList, Audit } from '@/types'
 import { normalizeUrl, readFile, scrapeLinks } from '@/lib/tauri'
 
 function resolveUrl(href: string, source: string): string {
@@ -17,8 +17,12 @@ function resolveUrl(href: string, source: string): string {
   }
 }
 
-export function TargetListsPage() {
-  const { targetLists, loading, createTargetList, updateTargetList, deleteTargetList } = useStore()
+interface Props {
+  onViewAudit: (auditId: string) => void
+}
+
+export function TargetListsPage({ onViewAudit }: Props) {
+  const { targetLists, audits, checkTemplates, loading, createTargetList, updateTargetList, deleteTargetList } = useStore()
   const [editing, setEditing] = useState<TargetList | null>(null)
   const [name, setName] = useState('')
   const [urlsText, setUrlsText] = useState('')
@@ -26,6 +30,7 @@ export function TargetListsPage() {
   const [showScraper, setShowScraper] = useState(false)
   const [scrapeUrl, setScrapeUrl] = useState('')
   const [scraping, setScraping] = useState(false)
+  const [auditModalList, setAuditModalList] = useState<TargetList | null>(null)
 
   function resetForm() {
     setName('')
@@ -207,6 +212,12 @@ export function TargetListsPage() {
             </div>
             <div className="flex gap-2">
               <button
+                onClick={() => setAuditModalList(list)}
+                className="px-3 py-1.5 text-sm border border-primary text-primary rounded-md hover:bg-primary/10 transition-colors"
+              >
+                Audit
+              </button>
+              <button
                 onClick={() => openEdit(list)}
                 className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
               >
@@ -222,6 +233,37 @@ export function TargetListsPage() {
           </div>
         ))}
       </div>
+
+      <Modal open={!!auditModalList} onClose={() => setAuditModalList(null)} title={`Audits · ${auditModalList?.name ?? ''}`}>
+        {auditModalList && (() => {
+          const related = audits.filter((a) => a.targetListId === auditModalList.id)
+          if (related.length === 0) {
+            return <p className="text-sm text-muted-foreground">No audits use this target list.</p>
+          }
+          return (
+            <div className="space-y-2">
+              {related.map((audit) => {
+                const ct = checkTemplates.find((t) => t.id === audit.checkTemplateId)
+                return (
+                  <button
+                    key={audit.id}
+                    onClick={() => { setAuditModalList(null); onViewAudit(audit.id) }}
+                    className="w-full text-left border border-border rounded-lg p-3 hover:border-primary transition-colors cursor-pointer"
+                  >
+                    <div className="font-medium">{audit.name}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {ct?.name ?? 'Unknown template'}
+                      {' · '}
+                      {audit.config.mode === 'sequential' ? 'Sequential' : `Batch x${audit.config.batchSize}`}
+                      {' · '}{audit.config.timeoutSecs}s timeout
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )
+        })()}
+      </Modal>
     </div>
   )
 }

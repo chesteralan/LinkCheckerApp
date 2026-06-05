@@ -99,7 +99,7 @@ function App() {
           ) : detailTemplate ? (
             <CheckTemplateDetailPage template={detailTemplate} onBack={() => setCheckTemplateDetailId(null)} />
           ) : activePage === 'target-lists' ? (
-            <TargetListsPage />
+            <TargetListsPage onViewAudit={handleViewAudit} />
           ) : activePage === 'check-templates' ? (
             <CheckTemplatesPage onQuickAudit={handleQuickAudit} onEditTemplate={handleEditTemplate} />
           ) : activePage === 'audits' && detailAudit ? (
