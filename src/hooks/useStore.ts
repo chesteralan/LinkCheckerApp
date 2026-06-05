@@ -94,6 +94,15 @@ export function useStore() {
     return created
   }, [])
 
+  const updateAudit = useCallback(async (id: string, data: { name?: string; config?: Audit['config'] }) => {
+    const updated = await api.updateAudit({ id, ...data })
+    setState((s) => ({
+      ...s,
+      audits: s.audits.map((a) => (a.id === id ? updated : a)),
+    }))
+    return updated
+  }, [])
+
   const deleteAudit = useCallback(async (id: string) => {
     await api.deleteAudit(id)
     setState((s) => ({
@@ -111,6 +120,7 @@ export function useStore() {
     updateCheckTemplate,
     deleteCheckTemplate,
     createAudit,
+    updateAudit,
     deleteAudit,
     reload: load,
   }

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TargetList {
     pub id: String,
     pub name: String,
@@ -17,6 +18,7 @@ pub struct SelectorCheck {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CheckTemplate {
     pub id: String,
     pub name: String,
@@ -26,6 +28,7 @@ pub struct CheckTemplate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditConfig {
     pub mode: String,
     pub batch_size: u32,
@@ -43,6 +46,7 @@ impl Default for AuditConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Audit {
     pub id: String,
     pub name: String,
@@ -53,6 +57,7 @@ pub struct Audit {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SelectorResult {
     pub selector_check_id: String,
     pub selector: String,
@@ -63,6 +68,7 @@ pub struct SelectorResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PageResult {
     pub url: String,
     pub page_title: Option<String>,
@@ -74,6 +80,7 @@ pub struct PageResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RunSummary {
     pub total: usize,
     pub passed: usize,
@@ -83,6 +90,7 @@ pub struct RunSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditRun {
     pub id: String,
     pub audit_id: String,

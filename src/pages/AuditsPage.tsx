@@ -16,7 +16,7 @@ const modes = [
 type AuditTab = 'overview' | 'results'
 
 export function AuditsPage() {
-  const { audits, targetLists, checkTemplates, loading, createAudit, deleteAudit } = useStore()
+  const { audits, targetLists, checkTemplates, loading, createAudit, updateAudit, deleteAudit } = useStore()
   const runner = useAuditRunner()
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
@@ -27,6 +27,11 @@ export function AuditsPage() {
   const [timeoutSecs, setTimeoutSecs] = useState(10)
   const [selectedAudit, setSelectedAudit] = useState<Audit | null>(null)
   const [activeTab, setActiveTab] = useState<AuditTab>('overview')
+  const [editingAudit, setEditingAudit] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editMode, setEditMode] = useState<'sequential' | 'batch'>('batch')
+  const [editBatchSize, setEditBatchSize] = useState(5)
+  const [editTimeoutSecs, setEditTimeoutSecs] = useState(10)
 
   function resetForm() {
     setName('')
@@ -41,6 +46,26 @@ export function AuditsPage() {
   function selectAudit(audit: Audit) {
     setSelectedAudit(audit)
     setActiveTab('overview')
+    setEditingAudit(false)
+  }
+
+  function startEdit() {
+    if (!selectedAudit) return
+    setEditName(selectedAudit.name)
+    setEditMode(selectedAudit.config.mode)
+    setEditBatchSize(selectedAudit.config.batchSize)
+    setEditTimeoutSecs(selectedAudit.config.timeoutSecs)
+    setEditingAudit(true)
+  }
+
+  async function handleUpdate() {
+    if (!selectedAudit || !editName.trim()) return
+    await updateAudit(selectedAudit.id, {
+      name: editName,
+      config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs },
+    })
+    setSelectedAudit((prev) => prev ? { ...prev, name: editName, config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs } } : null)
+    setEditingAudit(false)
   }
 
   async function handleCreate() {
@@ -278,6 +303,12 @@ export function AuditsPage() {
             </div>
             <div className="flex gap-2">
               <button
+                onClick={startEdit}
+                className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
+              >
+                Edit
+              </button>
+              <button
                 onClick={() => deleteAudit(selectedAudit.id).then(() => setSelectedAudit(null))}
                 className="px-3 py-1.5 text-sm border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
               >
@@ -314,46 +345,112 @@ export function AuditsPage() {
           <div className="p-4">
             {activeTab === 'overview' && (
               <div className="space-y-4">
-                {selectedTargetList && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-1">URLs ({selectedTargetList.urls.length})</h4>
-                    <div className="max-h-40 overflow-y-auto space-y-1">
-                      {selectedTargetList.urls.map((url, i) => (
-                        <div key={i} className="text-sm font-mono text-muted-foreground truncate">{url}</div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {selectedCheckTemplate && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-1">Selectors to check</h4>
-                    <div className="space-y-1">
-                      {selectedCheckTemplate.checks.map((c) => (
-                        <div key={c.id} className="flex items-center gap-2 text-sm">
-                          <code className="px-1.5 py-0.5 bg-muted rounded text-xs">{c.selector}</code>
-                          <span className="text-muted-foreground">{c.label}</span>
+                {editingAudit ? (
+                  <div className="space-y-4 border border-border rounded-lg p-4 bg-muted/20">
+                    <input
+                      type="text"
+                      placeholder="Audit name"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-sm text-muted-foreground block mb-1">Mode</label>
+                        <select
+                          value={editMode}
+                          onChange={(e) => setEditMode(e.target.value as 'sequential' | 'batch')}
+                          className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="sequential">Sequential</option>
+                          <option value="batch">Batch</option>
+                        </select>
+                      </div>
+                      {editMode === 'batch' && (
+                        <div>
+                          <label className="text-sm text-muted-foreground block mb-1">Batch Size</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={20}
+                            value={editBatchSize}
+                            onChange={(e) => setEditBatchSize(Number(e.target.value))}
+                            className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                          />
                         </div>
-                      ))}
+                      )}
+                      <div>
+                        <label className="text-sm text-muted-foreground block mb-1">Timeout (s)</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={120}
+                          value={editTimeoutSecs}
+                          onChange={(e) => setEditTimeoutSecs(Number(e.target.value))}
+                          className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleUpdate}
+                        disabled={!editName.trim()}
+                        className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingAudit(false)}
+                        className="px-4 py-2 border border-border rounded-md text-sm hover:bg-muted transition-colors"
+                      >
+                        Cancel
+                      </button>
                     </div>
                   </div>
+                ) : (
+                  <>
+                    {selectedTargetList && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-1">URLs ({selectedTargetList.urls.length})</h4>
+                        <div className="max-h-40 overflow-y-auto space-y-1">
+                          {selectedTargetList.urls.map((url, i) => (
+                            <div key={i} className="text-sm font-mono text-muted-foreground truncate">{url}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {selectedCheckTemplate && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-1">Selectors to check</h4>
+                        <div className="space-y-1">
+                          {selectedCheckTemplate.checks.map((c) => (
+                            <div key={c.id} className="flex items-center gap-2 text-sm">
+                              <code className="px-1.5 py-0.5 bg-muted rounded text-xs">{c.selector}</code>
+                              <span className="text-muted-foreground">{c.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex gap-2 pt-2">
+                      {runner.running ? (
+                        <button
+                          onClick={runner.cancel}
+                          className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
+                        >
+                          Cancel Run
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleRun}
+                          className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
+                        >
+                          Run Audit
+                        </button>
+                      )}
+                    </div>
+                  </>
                 )}
-                <div className="flex gap-2 pt-2">
-                  {runner.running ? (
-                    <button
-                      onClick={runner.cancel}
-                      className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
-                    >
-                      Cancel Run
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleRun}
-                      className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
-                    >
-                      Run Audit
-                    </button>
-                  )}
-                </div>
               </div>
             )}
 
