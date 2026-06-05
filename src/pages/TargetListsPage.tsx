@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { Modal } from '@/components/Modal'
 import type { TargetList } from '@/types'
 import { normalizeUrl, readFile } from '@/lib/tauri'
 
@@ -45,10 +46,8 @@ export function TargetListsPage() {
   }
 
   const handleSaveCb = useCallback(() => { if (showForm) handleSave() }, [showForm, name, urlsText, editing])
-  const handleResetCb = useCallback(() => { if (showForm) resetForm() }, [showForm])
 
   useHotkeys({
-    Escape: handleResetCb,
     'Cmd+Enter': handleSaveCb,
     'Ctrl+Enter': handleSaveCb,
   }, showForm)
@@ -69,13 +68,14 @@ export function TargetListsPage() {
         </button>
       </div>
 
-      {showForm && (
-        <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/20">
+      <Modal open={showForm} onClose={resetForm} title={editing ? 'Edit Target List' : 'New Target List'}>
+        <div className="space-y-4">
           <input
             type="text"
             placeholder="List name"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            autoFocus
             className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
           />
           <div>
@@ -131,7 +131,7 @@ export function TargetListsPage() {
             </button>
           </div>
         </div>
-      )}
+      </Modal>
 
       {targetLists.length === 0 && !showForm && (
         <p className="text-muted-foreground text-sm">No target lists yet. Create one to get started.</p>
