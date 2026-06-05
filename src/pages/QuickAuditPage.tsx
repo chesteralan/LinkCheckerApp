@@ -44,11 +44,14 @@ export function QuickAuditPage({ template, onBack }: Props) {
   const [showScraper, setShowScraper] = useState(false)
   const [scrapeUrl, setScrapeUrl] = useState('')
   const [scraping, setScraping] = useState(false)
+  const [mode, setMode] = useState<'sequential' | 'batch'>('batch')
+  const [batchSize, setBatchSize] = useState(5)
+  const [timeoutSecs, setTimeoutSecs] = useState(10)
 
   async function handleRun() {
     const urls = urlsText.split('\n').map((u) => normalizeUrl(u)).filter(Boolean)
     if (urls.length === 0) return
-    await runner.startQuick(urls, template.checks, { mode: 'batch', batchSize: 5, timeoutSecs: 10 })
+    await runner.startQuick(urls, template.checks, { mode, batchSize, timeoutSecs })
   }
 
   const handleRunCb = useCallback(() => {
@@ -131,6 +134,44 @@ export function QuickAuditPage({ template, onBack }: Props) {
           rows={6}
           className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
         />
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label className="text-sm text-muted-foreground block mb-1">Mode</label>
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value as 'sequential' | 'batch')}
+            className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="sequential">Sequential</option>
+            <option value="batch">Batch</option>
+          </select>
+        </div>
+        {mode === 'batch' && (
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">Batch Size</label>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={batchSize}
+              onChange={(e) => setBatchSize(Number(e.target.value))}
+              className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        )}
+        <div>
+          <label className="text-sm text-muted-foreground block mb-1">Timeout (seconds)</label>
+          <input
+            type="number"
+            min={1}
+            max={120}
+            value={timeoutSecs}
+            onChange={(e) => setTimeoutSecs(Number(e.target.value))}
+            className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
       </div>
 
       <div className="flex gap-2">
