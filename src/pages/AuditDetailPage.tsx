@@ -351,9 +351,17 @@ export function AuditDetailPage({ audit, onBack }: Props) {
           )}
 
           {runner.running && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse" />
-              Running...
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse" />
+                Running...
+              </div>
+              <button
+                onClick={runner.cancel}
+                className="px-3 py-1.5 text-sm border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
+              >
+                Cancel
+              </button>
             </div>
           )}
 
