@@ -3,7 +3,11 @@ import { useStore } from '@/hooks/useStore'
 import { listAllRuns, clearHistory } from '@/lib/tauri'
 import type { AuditRun } from '@/types'
 
-export function RunHistoryPage() {
+interface Props {
+  onViewRun: (runId: string) => void
+}
+
+export function RunHistoryPage({ onViewRun }: Props) {
   const { audits, targetLists, checkTemplates } = useStore()
   const [runs, setRuns] = useState<AuditRun[]>([])
   const [loading, setLoading] = useState(true)
@@ -59,13 +63,21 @@ export function RunHistoryPage() {
           const date = new Date(run.startedAt).toLocaleString()
 
           return (
-            <div key={run.id} className="border border-border rounded-lg p-4">
+            <button
+              key={run.id}
+              onClick={() => onViewRun(run.id)}
+              className="w-full text-left border border-border rounded-lg p-4 hover:border-primary transition-colors cursor-pointer"
+            >
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="font-medium">{audit?.name ?? 'Unknown audit'}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {tl?.name ?? '?'} → {ct?.name ?? '?'}
-                  </p>
+                  <h3 className="font-medium">{audit ? audit.name : 'Quick Audit'}</h3>
+                  {audit ? (
+                    <p className="text-sm text-muted-foreground">
+                      {tl?.name ?? '?'} → {ct?.name ?? '?'}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Quick Audit</p>
+                  )}
                 </div>
                 <span className={`text-xs px-2 py-0.5 rounded-full ${
                   run.status === 'completed' ? 'bg-success/10 text-success' :
@@ -91,7 +103,7 @@ export function RunHistoryPage() {
               </div>
 
               {run.results.length > 0 && (
-                <details className="mt-3">
+                <details className="mt-3" onClick={(e) => e.stopPropagation()}>
                   <summary className="text-sm text-primary cursor-pointer hover:underline">
                     Show details
                   </summary>
@@ -113,7 +125,7 @@ export function RunHistoryPage() {
                   </div>
                 </details>
               )}
-            </div>
+            </button>
           )
         })}
       </div>

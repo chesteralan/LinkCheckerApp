@@ -6,6 +6,7 @@ import { CheckTemplatesPage } from '@/pages/CheckTemplatesPage'
 import { CheckTemplateDetailPage } from '@/pages/CheckTemplateDetailPage'
 import { AuditsPage } from '@/pages/AuditsPage'
 import { RunHistoryPage } from '@/pages/RunHistoryPage'
+import { RunDetailPage } from '@/pages/RunDetailPage'
 import { QuickAuditPage } from '@/pages/QuickAuditPage'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useStore } from '@/hooks/useStore'
@@ -22,6 +23,7 @@ function App() {
   const [activePage, setActivePage] = useState<Page>('check-templates')
   const [quickAuditTemplateId, setQuickAuditTemplateId] = useState<string | null>(null)
   const [checkTemplateDetailId, setCheckTemplateDetailId] = useState<string | null>(null)
+  const [runDetailId, setRunDetailId] = useState<string | null>(null)
   const [dataPath, setDataPath] = useState('')
 
   useEffect(() => {
@@ -29,16 +31,22 @@ function App() {
   }, [])
 
   useHotkeys({
-    '1': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setActivePage('check-templates') },
-    '2': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setActivePage('target-lists') },
-    '3': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setActivePage('audits') },
-    '4': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setActivePage('history') },
+    '1': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setRunDetailId(null); setActivePage('check-templates') },
+    '2': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setRunDetailId(null); setActivePage('target-lists') },
+    '3': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setRunDetailId(null); setActivePage('audits') },
+    '4': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setRunDetailId(null); setActivePage('history') },
   })
 
   function handleNavigate(page: Page) {
     setQuickAuditTemplateId(null)
     setCheckTemplateDetailId(null)
+    setRunDetailId(null)
     setActivePage(page)
+  }
+
+  function handleViewRun(runId: string) {
+    setActivePage('history')
+    setRunDetailId(runId)
   }
 
   function handleQuickAudit(templateId: string) {
@@ -84,8 +92,10 @@ function App() {
             <CheckTemplatesPage onQuickAudit={handleQuickAudit} onEditTemplate={handleEditTemplate} />
           ) : activePage === 'audits' ? (
             <AuditsPage />
+          ) : activePage === 'history' && runDetailId ? (
+            <RunDetailPage runId={runDetailId} onBack={() => setRunDetailId(null)} />
           ) : activePage === 'history' ? (
-            <RunHistoryPage />
+            <RunHistoryPage onViewRun={handleViewRun} />
           ) : null}
           </ErrorBoundary>
         </main>
