@@ -10,6 +10,7 @@ import { QuickAuditPage } from '@/pages/QuickAuditPage'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useStore } from '@/hooks/useStore'
 import { getDataPath } from '@/lib/tauri'
+import { openPath } from '@tauri-apps/plugin-opener'
 import type { CheckTemplate } from '@/types'
 
 declare const __APP_VERSION__: string
@@ -91,7 +92,13 @@ function App() {
       </div>
       <footer className="border-t border-border px-6 py-2 bg-background shrink-0 text-xs text-muted-foreground flex items-center gap-2">
         <span>Data Folder:</span>
-        <code className="text-[11px]">{dataPath.replace(/\/[^/]+$/, '') || '...'}</code>
+        <button
+          onClick={() => openPath(dataPath.replace(/\/[^/]+$/, ''))}
+          className="text-[11px] font-mono text-primary hover:underline text-left"
+          title="Open data folder"
+        >
+          {dataPath.replace(/\/[^/]+$/, '') || '...'}
+        </button>
       </footer>
     </div>
   )
