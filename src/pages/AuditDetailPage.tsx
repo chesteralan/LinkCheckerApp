@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { save } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useAuditRunner } from '@/hooks/useAuditRunner'
@@ -25,7 +25,14 @@ export function AuditDetailPage({ audit, onBack }: Props) {
   const [editTimeoutSecs, setEditTimeoutSecs] = useState(audit.config.timeoutSecs)
   const [editOriginOverride, setEditOriginOverride] = useState(audit.originOverride ?? '')
   const [editUrlPostfix, setEditUrlPostfix] = useState(audit.urlPostfix ?? '')
+  const [originOverride, setOriginOverride] = useState(audit.originOverride ?? '')
+  const [urlPostfix, setUrlPostfix] = useState(audit.urlPostfix ?? '')
   const [activeTab, setActiveTab] = useState<AuditTab>('overview')
+
+  useEffect(() => {
+    setOriginOverride(audit.originOverride ?? '')
+    setUrlPostfix(audit.urlPostfix ?? '')
+  }, [audit.originOverride, audit.urlPostfix])
 
   const tl = targetLists.find((t) => t.id === audit.targetListId)
   const ct = checkTemplates.find((c) => c.id === audit.checkTemplateId)
@@ -301,11 +308,9 @@ export function AuditDetailPage({ audit, onBack }: Props) {
                     <input
                       type="text"
                       placeholder="https://staging.example.com"
-                      value={audit.originOverride ?? ''}
-                      onChange={async (e) => {
-                        const val = e.target.value
-                        await updateAudit(audit.id, { originOverride: val || undefined })
-                      }}
+                      value={originOverride}
+                      onChange={(e) => setOriginOverride(e.target.value)}
+                      onBlur={() => updateAudit(audit.id, { originOverride: originOverride || undefined })}
                       className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
                     />
                   </div>
@@ -314,11 +319,9 @@ export function AuditDetailPage({ audit, onBack }: Props) {
                     <input
                       type="text"
                       placeholder="?utm_source=test"
-                      value={audit.urlPostfix ?? ''}
-                      onChange={async (e) => {
-                        const val = e.target.value
-                        await updateAudit(audit.id, { urlPostfix: val || undefined })
-                      }}
+                      value={urlPostfix}
+                      onChange={(e) => setUrlPostfix(e.target.value)}
+                      onBlur={() => updateAudit(audit.id, { urlPostfix: urlPostfix || undefined })}
                       className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
                     />
                   </div>
