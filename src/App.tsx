@@ -3,8 +3,9 @@ import { Sidebar } from '@/components/Sidebar'
 import { TargetListsPage } from '@/pages/TargetListsPage'
 import { CheckTemplatesPage } from '@/pages/CheckTemplatesPage'
 import { AuditsPage } from '@/pages/AuditsPage'
+import { RunHistoryPage } from '@/pages/RunHistoryPage'
 
-export type Page = 'target-lists' | 'check-templates' | 'audits'
+export type Page = 'target-lists' | 'check-templates' | 'audits' | 'history'
 
 function App() {
   const [activePage, setActivePage] = useState<Page>('target-lists')
@@ -20,6 +21,7 @@ function App() {
           {activePage === 'target-lists' && <TargetListsPage />}
           {activePage === 'check-templates' && <CheckTemplatesPage />}
           {activePage === 'audits' && <AuditsPage />}
+          {activePage === 'history' && <RunHistoryPage />}
         </main>
       </div>
     </div>

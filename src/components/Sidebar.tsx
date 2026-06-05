@@ -4,6 +4,7 @@ const nav: { id: Page; label: string }[] = [
   { id: 'target-lists', label: 'Target Lists' },
   { id: 'check-templates', label: 'Check Templates' },
   { id: 'audits', label: 'Audits' },
+  { id: 'history', label: 'Run History' },
 ]
 
 interface Props {

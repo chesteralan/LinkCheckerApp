@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '@/hooks/useStore'
 import type { TargetList } from '@/types'
+import { normalizeUrl } from '@/lib/tauri'
 
 export function TargetListsPage() {
   const { targetLists, loading, createTargetList, updateTargetList, deleteTargetList } = useStore()
@@ -26,7 +27,7 @@ export function TargetListsPage() {
   async function handleSave() {
     const urls = urlsText
       .split('\n')
-      .map((u) => u.trim())
+      .map((u) => normalizeUrl(u))
       .filter(Boolean)
 
     if (editing) {

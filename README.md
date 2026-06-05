@@ -1,73 +1,41 @@
-# React + TypeScript + Vite
+# Link Checker
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A desktop tool that checks web pages against user-defined CSS selector assertions. Create **Target Lists** (collections of URLs) and **Check Templates** (CSS selectors to verify), then bind them into an **Audit** to run sequential or batch checks on all pages.
 
-Currently, two official plugins are available:
+Built with [Tauri](https://tauri.app) + [React](https://react.dev) + [TypeScript](https://www.typescriptlang.org) + [Tailwind CSS v4](https://tailwindcss.com).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Quick start
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run tauri dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## How it works
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+1. **Target Lists** — named collections of URLs (one per line, protocol optional)
+2. **Check Templates** — named collections of CSS selectors with labels (e.g. `.login-form` → "Login form exists")
+3. **Audits** — bind a Target List + Check Template, configure mode (sequential or batch), then run
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Results show per-URL: HTTP status, response time, page title, and whether each selector matched (with count and text content).
+
+## Development
+
+```bash
+npm run dev          # Vite dev server
+npm run tauri dev    # Full Tauri app with hot reload
+npm run build        # TypeScript check + Vite build
+npm run tauri build  # Production bundle
 ```
+
+## Tech Stack
+
+| Layer | Choice |
+|---|---|
+| Desktop shell | Tauri v2 |
+| Frontend | React 19, TypeScript 6 |
+| Bundler | Vite 8 |
+| Styling | Tailwind CSS v4 |
+| HTTP client | reqwest (Rust) |
+| HTML parser | scraper (Rust) |
+| Persistence | JSON files in app data dir |

@@ -35,9 +35,10 @@
 - [x] ProgressBar component
 
 ## Phase 5 — Polish ⬜
-- [ ] RunHistoryPage — past runs
-- [ ] URL normalisation (auto-add https://)
+- [x] RunHistoryPage — past runs
+- [x] URL normalisation (auto-add https://)
+- [x] Clean up unused Vite scaffold assets
+- [x] Update README.md
 - [ ] CSV export
 - [ ] File import for URLs
 - [ ] Keyboard shortcuts
-- [ ] Clean up unused Vite scaffold assets

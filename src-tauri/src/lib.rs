@@ -61,6 +61,7 @@ pub fn run() {
             commands::audits::delete_audit,
             commands::runs::run_audit,
             commands::runs::cancel_run,
+            commands::runs::list_all_runs,
             commands::runs::list_audit_runs,
             commands::runs::get_run_results,
         ])

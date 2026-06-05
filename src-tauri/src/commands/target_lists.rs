@@ -5,6 +5,18 @@ use uuid::Uuid;
 use crate::models::TargetList;
 use crate::AppState;
 
+fn normalize_url(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("https://{}", trimmed)
+    }
+}
+
 #[tauri::command]
 pub fn list_target_lists(state: State<'_, AppState>) -> Result<Vec<TargetList>, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;
@@ -18,6 +30,7 @@ pub fn create_target_list(
     urls: Vec<String>,
 ) -> Result<TargetList, String> {
     let now = Utc::now().to_rfc3339();
+    let urls: Vec<String> = urls.iter().map(|u| normalize_url(u)).filter(|u| !u.is_empty()).collect();
     let list = TargetList {
         id: Uuid::new_v4().to_string(),
         name,

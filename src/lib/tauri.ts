@@ -6,6 +6,15 @@ import type {
   AuditRun,
 } from '@/types'
 
+export function normalizeUrl(raw: string): string {
+  let url = raw.trim()
+  if (!url) return url
+  if (!/^https?:\/\//i.test(url)) {
+    url = `https://${url}`
+  }
+  return url
+}
+
 // Target Lists
 export const listTargetLists = () => invoke<TargetList[]>('list_target_lists')
 export const createTargetList = (data: { name: string; urls: string[] }) =>
@@ -34,6 +43,7 @@ export const deleteAudit = (id: string) =>
   invoke<void>('delete_audit', { id })
 
 // Runs
+export const listAllRuns = () => invoke<AuditRun[]>('list_all_runs')
 export const runAudit = (auditId: string) =>
   invoke<void>('run_audit', { auditId })
 export const cancelRun = () =>
