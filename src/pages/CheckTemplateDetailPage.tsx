@@ -17,8 +17,10 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
   const [checks, setChecks] = useState<SelectorInput[]>(
     template.checks.map((c) => ({ selector: c.selector, label: c.label }))
   )
-  const [dirty, setDirty] = useState(false)
-  const [saving, setSaving] = useState(false)
+
+  function persist(updated: SelectorInput[]) {
+    updateCheckTemplate(template.id, { checks: updated.filter((c) => c.selector.trim() && c.label.trim()) })
+  }
 
   function moveUp(index: number) {
     if (index === 0) return
@@ -27,7 +29,7 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
     updated[index - 1] = updated[index]
     updated[index] = tmp
     setChecks(updated)
-    setDirty(true)
+    persist(updated)
   }
 
   function moveDown(index: number) {
@@ -37,33 +39,31 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
     updated[index + 1] = updated[index]
     updated[index] = tmp
     setChecks(updated)
-    setDirty(true)
+    persist(updated)
   }
 
   function addCheck() {
-    setChecks([...checks, { selector: '', label: '' }])
-    setDirty(true)
+    const updated = [...checks, { selector: '', label: '' }]
+    setChecks(updated)
+    persist(updated)
   }
 
   function removeCheck(index: number) {
-    setChecks(checks.filter((_, i) => i !== index))
-    setDirty(true)
+    const updated = checks.filter((_, i) => i !== index)
+    setChecks(updated)
+    if (updated.length > 0) persist(updated)
   }
 
   function updateCheck(index: number, field: keyof SelectorInput, value: string) {
     const updated = [...checks]
     updated[index] = { ...updated[index], [field]: value }
     setChecks(updated)
-    setDirty(true)
   }
 
-  async function handleSave() {
-    const validChecks = checks.filter((c) => c.selector.trim() && c.label.trim())
-    if (validChecks.length === 0) return
-    setSaving(true)
-    await updateCheckTemplate(template.id, { checks: validChecks })
-    setSaving(false)
-    setDirty(false)
+  function saveCheck(index: number) {
+    const updated = [...checks]
+    if (!updated[index].selector.trim() || !updated[index].label.trim()) return
+    persist(updated)
   }
 
   return (
@@ -117,6 +117,7 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
                     placeholder="e.g. .login-form"
                     value={check.selector}
                     onChange={(e) => updateCheck(i, 'selector', e.target.value)}
+                    onBlur={() => saveCheck(i)}
                     className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
@@ -127,6 +128,7 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
                     placeholder="e.g. Login form exists"
                     value={check.label}
                     onChange={(e) => updateCheck(i, 'label', e.target.value)}
+                    onBlur={() => saveCheck(i)}
                     className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
@@ -141,27 +143,6 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
             </div>
           ))}
         </div>
-
-        {dirty && (
-          <div className="flex gap-2 pt-2 border-t border-border">
-            <button
-              onClick={handleSave}
-              disabled={saving || checks.filter((c) => c.selector.trim() && c.label.trim()).length === 0}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save Changes'}
-            </button>
-            <button
-              onClick={() => {
-                setChecks(template.checks.map((c) => ({ selector: c.selector, label: c.label })))
-                setDirty(false)
-              }}
-              className="px-4 py-2 border border-border rounded-md text-sm hover:bg-muted transition-colors"
-            >
-              Discard
-            </button>
-          </div>
-        )}
       </div>
     </div>
   )
