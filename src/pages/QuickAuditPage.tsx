@@ -10,6 +10,17 @@ interface Props {
   onBack: () => void
 }
 
+function resolveUrl(href: string, source: string): string {
+  if (href.startsWith('http://') || href.startsWith('https://')) return href
+  try {
+    const origin = new URL(source).origin
+    const joined = href.startsWith('/') ? `${origin}${href}` : `${origin}/${href}`
+    return joined
+  } catch {
+    return href
+  }
+}
+
 function LiveSummary({ results }: { results: PageResult[] }) {
   const passed = results.filter((r) => !r.error && r.checks.every((c) => c.found)).length
   const failed = results.filter((r) => !r.error && r.checks.some((c) => !c.found)).length
@@ -93,10 +104,12 @@ export function QuickAuditPage({ template, onBack }: Props) {
                 if (!scrapeUrl.trim()) return
                 setScraping(true)
                 try {
-                  const links = await scrapeLinks(normalizeUrl(scrapeUrl))
+                  const sourceUrl = normalizeUrl(scrapeUrl)
+                  const links = await scrapeLinks(sourceUrl)
+                  const resolved = links.map((l) => resolveUrl(l, sourceUrl))
                   setUrlsText((prev) => {
                     const existing = prev.trim() ? prev + '\n' : ''
-                    return existing + links.join('\n')
+                    return existing + resolved.join('\n')
                   })
                 } catch (e) {
                   console.error(e)

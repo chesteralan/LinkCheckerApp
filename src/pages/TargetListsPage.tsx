@@ -6,6 +6,17 @@ import { Modal } from '@/components/Modal'
 import type { TargetList } from '@/types'
 import { normalizeUrl, readFile, scrapeLinks } from '@/lib/tauri'
 
+function resolveUrl(href: string, source: string): string {
+  if (href.startsWith('http://') || href.startsWith('https://')) return href
+  try {
+    const origin = new URL(source).origin
+    const joined = href.startsWith('/') ? `${origin}${href}` : `${origin}/${href}`
+    return joined
+  } catch {
+    return href
+  }
+}
+
 export function TargetListsPage() {
   const { targetLists, loading, createTargetList, updateTargetList, deleteTargetList } = useStore()
   const [editing, setEditing] = useState<TargetList | null>(null)
@@ -134,10 +145,12 @@ export function TargetListsPage() {
                     if (!scrapeUrl.trim()) return
                     setScraping(true)
                     try {
-                      const links = await scrapeLinks(normalizeUrl(scrapeUrl))
+                      const sourceUrl = normalizeUrl(scrapeUrl)
+                      const links = await scrapeLinks(sourceUrl)
+                      const resolved = links.map((l) => resolveUrl(l, sourceUrl))
                       setUrlsText((prev) => {
                         const existing = prev.trim() ? prev + '\n' : ''
-                        return existing + links.join('\n')
+                        return existing + resolved.join('\n')
                       })
                     } catch (e) {
                       console.error(e)
