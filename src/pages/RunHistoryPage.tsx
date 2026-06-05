@@ -20,7 +20,7 @@ export function RunHistoryPage() {
 
   if (runs.length === 0) {
     return (
-      <div className="max-w-3xl space-y-6">
+      <div className="space-y-6">
         <h2 className="text-2xl font-bold">Run History</h2>
         <p className="text-muted-foreground text-sm">No runs yet. Run an audit to see results here.</p>
       </div>
@@ -32,7 +32,7 @@ export function RunHistoryPage() {
   )
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="space-y-6">
       <h2 className="text-2xl font-bold">Run History</h2>
 
       <div className="space-y-3">
