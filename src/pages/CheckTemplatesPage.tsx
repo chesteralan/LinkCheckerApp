@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { Modal } from '@/components/Modal'
 import type { CheckTemplate } from '@/types'
 
 interface SelectorInput {
@@ -60,10 +61,8 @@ export function CheckTemplatesPage() {
   }
 
   const handleSaveCb = useCallback(() => { if (showForm) handleSave() }, [showForm, name, checks, editing])
-  const handleResetCb = useCallback(() => { if (showForm) resetForm() }, [showForm])
 
   useHotkeys({
-    Escape: handleResetCb,
     'Cmd+Enter': handleSaveCb,
     'Ctrl+Enter': handleSaveCb,
   }, showForm)
@@ -84,13 +83,14 @@ export function CheckTemplatesPage() {
         </button>
       </div>
 
-      {showForm && (
-        <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/20">
+      <Modal open={showForm} onClose={resetForm} title={editing ? 'Edit Check Template' : 'New Check Template'}>
+        <div className="space-y-4">
           <input
             type="text"
             placeholder="Template name"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            autoFocus
             className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
           />
 
@@ -149,9 +149,9 @@ export function CheckTemplatesPage() {
             </button>
           </div>
         </div>
-      )}
+      </Modal>
 
-      {checkTemplates.length === 0 && !showForm && (
+      {checkTemplates.length === 0 && (
         <p className="text-muted-foreground text-sm">No check templates yet. Create one to get started.</p>
       )}
 

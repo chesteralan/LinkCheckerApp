@@ -133,7 +133,7 @@ export function TargetListsPage() {
         </div>
       </Modal>
 
-      {targetLists.length === 0 && !showForm && (
+      {targetLists.length === 0 && (
         <p className="text-muted-foreground text-sm">No target lists yet. Create one to get started.</p>
       )}
 
