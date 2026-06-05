@@ -5,6 +5,35 @@ use crate::models::AuditRun;
 use crate::AppState;
 
 #[tauri::command(rename_all = "camelCase")]
+pub async fn scrape_links(url: String) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let html = client.get(&url).send().await
+        .map_err(|e| format!("Failed to fetch URL: {}", e))?
+        .text().await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    let document = scraper::Html::parse_document(&html);
+    let selector = scraper::Selector::parse("a[href]").map_err(|_| "Invalid selector".to_string())?;
+
+    let mut links: Vec<String> = document
+        .select(&selector)
+        .filter_map(|el| el.value().attr("href"))
+        .filter(|h| !h.is_empty())
+        .map(|h| h.to_string())
+        .collect();
+
+    links.sort();
+    links.dedup();
+
+    Ok(links)
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub async fn run_audit(
     app: AppHandle,
     state: State<'_, AppState>,

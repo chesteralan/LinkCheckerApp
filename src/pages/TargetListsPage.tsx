@@ -4,7 +4,7 @@ import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
 import type { TargetList } from '@/types'
-import { normalizeUrl, readFile } from '@/lib/tauri'
+import { normalizeUrl, readFile, scrapeLinks } from '@/lib/tauri'
 
 export function TargetListsPage() {
   const { targetLists, loading, createTargetList, updateTargetList, deleteTargetList } = useStore()
@@ -12,6 +12,9 @@ export function TargetListsPage() {
   const [name, setName] = useState('')
   const [urlsText, setUrlsText] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [showScraper, setShowScraper] = useState(false)
+  const [scrapeUrl, setScrapeUrl] = useState('')
+  const [scraping, setScraping] = useState(false)
 
   function resetForm() {
     setName('')
@@ -83,30 +86,72 @@ export function TargetListsPage() {
               <label className="text-sm text-muted-foreground">
                 URLs (one per line)
               </label>
-              <button
-                type="button"
-                onClick={async () => {
-                  const path = await open({
-                    multiple: false,
-                    filters: [{ name: 'Text/CSV', extensions: ['txt', 'csv'] }],
-                  })
-                  if (!path) return
-                  const content = await readFile(path)
-                  const lines = content.split('\n')
-                    .map((l) => l.trim())
-                    .filter(Boolean)
-                    .filter((l) => !l.startsWith(','))
-                    .map((l) => l.split(',')[0])
-                  setUrlsText((prev) => {
-                    const existing = prev.trim() ? prev + '\n' : ''
-                    return existing + lines.join('\n')
-                  })
-                }}
-                className="text-xs text-primary hover:underline"
-              >
-                Import file
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowScraper(!showScraper)}
+                  className="text-xs text-primary hover:underline"
+                >
+                  {showScraper ? 'Hide scraper' : 'Scrape links'}
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const path = await open({
+                      multiple: false,
+                      filters: [{ name: 'Text/CSV', extensions: ['txt', 'csv'] }],
+                    })
+                    if (!path) return
+                    const content = await readFile(path)
+                    const lines = content.split('\n')
+                      .map((l) => l.trim())
+                      .filter(Boolean)
+                      .filter((l) => !l.startsWith(','))
+                      .map((l) => l.split(',')[0])
+                    setUrlsText((prev) => {
+                      const existing = prev.trim() ? prev + '\n' : ''
+                      return existing + lines.join('\n')
+                    })
+                  }}
+                  className="text-xs text-primary hover:underline"
+                >
+                  Import file
+                </button>
+              </div>
             </div>
+            {showScraper && (
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  placeholder="https://example.com/page"
+                  value={scrapeUrl}
+                  onChange={(e) => setScrapeUrl(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!scrapeUrl.trim()) return
+                    setScraping(true)
+                    try {
+                      const links = await scrapeLinks(normalizeUrl(scrapeUrl))
+                      setUrlsText((prev) => {
+                        const existing = prev.trim() ? prev + '\n' : ''
+                        return existing + links.join('\n')
+                      })
+                    } catch (e) {
+                      console.error(e)
+                    } finally {
+                      setScraping(false)
+                    }
+                  }}
+                  disabled={!scrapeUrl.trim() || scraping}
+                  className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 shrink-0"
+                >
+                  {scraping ? 'Scanning...' : 'Scan'}
+                </button>
+              </div>
+            )}
             <textarea
               placeholder="https://example.com&#10;https://example.org"
               value={urlsText}

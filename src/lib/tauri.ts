@@ -42,6 +42,10 @@ export const updateAudit = (data: { id: string; name?: string; config?: { mode: 
 export const deleteAudit = (id: string) =>
   invoke<void>('delete_audit', { id })
 
+// Link scraping
+export const scrapeLinks = (url: string) =>
+  invoke<string[]>('scrape_links', { url })
+
 // File I/O
 export const writeFile = (path: string, content: string) =>
   invoke<void>('write_file', { path, content })
