@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { save } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useAuditRunner } from '@/hooks/useAuditRunner'
@@ -29,11 +29,6 @@ export function AuditDetailPage({ audit, onBack }: Props) {
   const [urlPostfix, setUrlPostfix] = useState(audit.urlPostfix ?? '')
   const [activeTab, setActiveTab] = useState<AuditTab>('overview')
 
-  useEffect(() => {
-    setOriginOverride(audit.originOverride ?? '')
-    setUrlPostfix(audit.urlPostfix ?? '')
-  }, [audit.originOverride, audit.urlPostfix])
-
   const tl = targetLists.find((t) => t.id === audit.targetListId)
   const ct = checkTemplates.find((c) => c.id === audit.checkTemplateId)
 
@@ -55,6 +50,8 @@ export function AuditDetailPage({ audit, onBack }: Props) {
       originOverride: editOriginOverride || undefined,
       urlPostfix: editUrlPostfix || undefined,
     })
+    setOriginOverride(editOriginOverride || '')
+    setUrlPostfix(editUrlPostfix || '')
     setEditing(false)
   }
 

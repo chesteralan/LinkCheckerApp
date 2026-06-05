@@ -103,7 +103,7 @@ function App() {
           ) : activePage === 'check-templates' ? (
             <CheckTemplatesPage onQuickAudit={handleQuickAudit} onEditTemplate={handleEditTemplate} />
           ) : activePage === 'audits' && detailAudit ? (
-            <AuditDetailPage audit={detailAudit} onBack={() => setAuditDetailId(null)} />
+            <AuditDetailPage key={detailAudit.id} audit={detailAudit} onBack={() => setAuditDetailId(null)} />
           ) : activePage === 'audits' ? (
             <AuditsPage onViewAudit={handleViewAudit} />
           ) : activePage === 'history' && runDetailId ? (
