@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Sidebar } from '@/components/Sidebar'
 import { TargetListsPage } from '@/pages/TargetListsPage'
 import { CheckTemplatesPage } from '@/pages/CheckTemplatesPage'
+import { CheckTemplateDetailPage } from '@/pages/CheckTemplateDetailPage'
 import { AuditsPage } from '@/pages/AuditsPage'
 import { RunHistoryPage } from '@/pages/RunHistoryPage'
 import { QuickAuditPage } from '@/pages/QuickAuditPage'
@@ -15,28 +16,41 @@ export type Page = 'target-lists' | 'check-templates' | 'audits' | 'history'
 
 function App() {
   const { checkTemplates } = useStore()
-  const [activePage, setActivePage] = useState<Page>('target-lists')
+  const [activePage, setActivePage] = useState<Page>('check-templates')
   const [quickAuditTemplateId, setQuickAuditTemplateId] = useState<string | null>(null)
+  const [checkTemplateDetailId, setCheckTemplateDetailId] = useState<string | null>(null)
 
   useHotkeys({
-    '1': () => { setQuickAuditTemplateId(null); setActivePage('check-templates') },
-    '2': () => { setQuickAuditTemplateId(null); setActivePage('target-lists') },
-    '3': () => { setQuickAuditTemplateId(null); setActivePage('audits') },
-    '4': () => { setQuickAuditTemplateId(null); setActivePage('history') },
+    '1': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setActivePage('check-templates') },
+    '2': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setActivePage('target-lists') },
+    '3': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setActivePage('audits') },
+    '4': () => { setQuickAuditTemplateId(null); setCheckTemplateDetailId(null); setActivePage('history') },
   })
 
   function handleNavigate(page: Page) {
     setQuickAuditTemplateId(null)
+    setCheckTemplateDetailId(null)
     setActivePage(page)
   }
 
   function handleQuickAudit(templateId: string) {
+    setCheckTemplateDetailId(null)
     setQuickAuditTemplateId(templateId)
+    setActivePage('check-templates')
+  }
+
+  function handleEditTemplate(templateId: string) {
+    setQuickAuditTemplateId(null)
+    setCheckTemplateDetailId(templateId)
     setActivePage('check-templates')
   }
 
   const quickAuditTemplate: CheckTemplate | null = quickAuditTemplateId
     ? checkTemplates.find((ct) => ct.id === quickAuditTemplateId) ?? null
+    : null
+
+  const detailTemplate: CheckTemplate | null = checkTemplateDetailId
+    ? checkTemplates.find((ct) => ct.id === checkTemplateDetailId) ?? null
     : null
 
   return (
@@ -53,10 +67,12 @@ function App() {
         <main className="flex-1 overflow-y-auto p-6">
           {quickAuditTemplate ? (
             <QuickAuditPage template={quickAuditTemplate} onBack={() => setQuickAuditTemplateId(null)} />
+          ) : detailTemplate ? (
+            <CheckTemplateDetailPage template={detailTemplate} onBack={() => setCheckTemplateDetailId(null)} />
           ) : activePage === 'target-lists' ? (
             <TargetListsPage />
           ) : activePage === 'check-templates' ? (
-            <CheckTemplatesPage onQuickAudit={handleQuickAudit} />
+            <CheckTemplatesPage onQuickAudit={handleQuickAudit} onEditTemplate={handleEditTemplate} />
           ) : activePage === 'audits' ? (
             <AuditsPage />
           ) : activePage === 'history' ? (
