@@ -85,8 +85,8 @@ export function useStore() {
     }))
   }, [])
 
-  const createAudit = useCallback(async (name: string, targetListId: string, checkTemplateId: string, config: Audit['config']) => {
-    const created = await api.createAudit({ name, targetListId, checkTemplateId, config })
+  const createAudit = useCallback(async (name: string, targetListId: string, checkTemplateId: string, config: Audit['config'], originOverride?: string) => {
+    const created = await api.createAudit({ name, targetListId, checkTemplateId, config, originOverride })
     setState((s) => ({
       ...s,
       audits: [...s.audits, created],
@@ -94,7 +94,7 @@ export function useStore() {
     return created
   }, [])
 
-  const updateAudit = useCallback(async (id: string, data: { name?: string; config?: Audit['config'] }) => {
+  const updateAudit = useCallback(async (id: string, data: { name?: string; config?: Audit['config']; originOverride?: string }) => {
     const updated = await api.updateAudit({ id, ...data })
     setState((s) => ({
       ...s,

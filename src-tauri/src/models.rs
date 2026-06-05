@@ -53,6 +53,7 @@ pub struct Audit {
     pub target_list_id: String,
     pub check_template_id: String,
     pub config: AuditConfig,
+    pub origin_override: Option<String>,
     pub created_at: String,
 }
 

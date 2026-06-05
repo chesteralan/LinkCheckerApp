@@ -51,7 +51,11 @@ impl Checker {
 
         let results = Arc::new(std::sync::Mutex::new(Vec::with_capacity(total)));
         let checked = Arc::new(std::sync::Mutex::new(0usize));
-        let urls: Vec<String> = target_list.urls.clone();
+        let urls: Vec<String> = target_list
+            .urls
+            .iter()
+            .map(|u| apply_origin_override(u, &audit.origin_override))
+            .collect();
         let checks = check_template.checks.clone();
 
         let mut fetches = Vec::new();
@@ -227,6 +231,24 @@ fn extract_title(html: &str) -> Option<String> {
         .select(&selector)
         .next()
         .map(|el| el.text().collect::<String>().trim().to_string())
+}
+
+fn apply_origin_override(url: &str, origin_override: &Option<String>) -> String {
+    let new_origin = match origin_override {
+        Some(oo) if !oo.is_empty() => oo.trim_end_matches('/'),
+        _ => return url.to_string(),
+    };
+
+    if let Some(scheme_end) = url.find("://") {
+        let after_scheme = &url[scheme_end + 3..];
+        if let Some(path_start) = after_scheme.find('/') {
+            let path_and_query = &after_scheme[path_start..];
+            return format!("{}{}", new_origin, path_and_query);
+        }
+        return format!("{}/", new_origin);
+    }
+
+    url.to_string()
 }
 
 fn compute_summary(results: &[PageResult]) -> RunSummary {

@@ -25,6 +25,7 @@ export function AuditsPage() {
   const [mode, setMode] = useState<'sequential' | 'batch'>('batch')
   const [batchSize, setBatchSize] = useState(5)
   const [timeoutSecs, setTimeoutSecs] = useState(10)
+  const [originOverride, setOriginOverride] = useState('')
   const [selectedAudit, setSelectedAudit] = useState<Audit | null>(null)
   const [activeTab, setActiveTab] = useState<AuditTab>('overview')
   const [editingAudit, setEditingAudit] = useState(false)
@@ -32,6 +33,7 @@ export function AuditsPage() {
   const [editMode, setEditMode] = useState<'sequential' | 'batch'>('batch')
   const [editBatchSize, setEditBatchSize] = useState(5)
   const [editTimeoutSecs, setEditTimeoutSecs] = useState(10)
+  const [editOriginOverride, setEditOriginOverride] = useState('')
 
   function resetForm() {
     setName('')
@@ -40,6 +42,7 @@ export function AuditsPage() {
     setMode('batch')
     setBatchSize(5)
     setTimeoutSecs(10)
+    setOriginOverride('')
     setShowForm(false)
   }
 
@@ -55,6 +58,7 @@ export function AuditsPage() {
     setEditMode(selectedAudit.config.mode)
     setEditBatchSize(selectedAudit.config.batchSize)
     setEditTimeoutSecs(selectedAudit.config.timeoutSecs)
+    setEditOriginOverride(selectedAudit.originOverride ?? '')
     setEditingAudit(true)
   }
 
@@ -63,8 +67,9 @@ export function AuditsPage() {
     await updateAudit(selectedAudit.id, {
       name: editName,
       config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs },
+      originOverride: editOriginOverride || undefined,
     })
-    setSelectedAudit((prev) => prev ? { ...prev, name: editName, config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs } } : null)
+    setSelectedAudit((prev) => prev ? { ...prev, name: editName, config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs }, originOverride: editOriginOverride || undefined } : null)
     setEditingAudit(false)
   }
 
@@ -74,7 +79,7 @@ export function AuditsPage() {
       mode,
       batchSize,
       timeoutSecs,
-    })
+    }, originOverride || undefined)
     resetForm()
   }
 
@@ -199,7 +204,7 @@ export function AuditsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-4 gap-4">
             <div>
               <label className="text-sm text-muted-foreground block mb-1">Mode</label>
               <select
@@ -234,6 +239,16 @@ export function AuditsPage() {
                 value={timeoutSecs}
                 onChange={(e) => setTimeoutSecs(Number(e.target.value))}
                 className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">Origin Override (optional)</label>
+              <input
+                type="text"
+                placeholder="https://staging.example.com"
+                value={originOverride}
+                onChange={(e) => setOriginOverride(e.target.value)}
+                className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
               />
             </div>
           </div>
@@ -278,6 +293,7 @@ export function AuditsPage() {
               <p className="text-xs text-muted-foreground mt-0.5">
                 {audit.config.mode === 'sequential' ? 'Sequential' : `Batch x${audit.config.batchSize}`}
                 {' · '}{audit.config.timeoutSecs}s timeout
+                {audit.originOverride && ` · ${audit.originOverride}`}
               </p>
             </button>
           )
@@ -299,6 +315,9 @@ export function AuditsPage() {
                 {selectedTargetList?.name ?? 'Unknown'} · {selectedTargetList?.urls.length ?? 0} URLs
                 {' — '}
                 {selectedCheckTemplate?.name ?? 'Unknown'} · {selectedCheckTemplate?.checks.length ?? 0} selectors
+                {selectedAudit.originOverride && (
+                  <> · Origin: <span className="font-mono text-xs">{selectedAudit.originOverride}</span></>
+                )}
               </p>
             </div>
             <div className="flex gap-2">
@@ -354,7 +373,7 @@ export function AuditsPage() {
                       onChange={(e) => setEditName(e.target.value)}
                       className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                     />
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-4 gap-4">
                       <div>
                         <label className="text-sm text-muted-foreground block mb-1">Mode</label>
                         <select
@@ -388,6 +407,16 @@ export function AuditsPage() {
                           value={editTimeoutSecs}
                           onChange={(e) => setEditTimeoutSecs(Number(e.target.value))}
                           className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm text-muted-foreground block mb-1">Origin Override</label>
+                        <input
+                          type="text"
+                          placeholder="https://staging.example.com"
+                          value={editOriginOverride}
+                          onChange={(e) => setEditOriginOverride(e.target.value)}
+                          className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
                         />
                       </div>
                     </div>

@@ -32,6 +32,7 @@ export interface Audit {
   targetListId: string
   checkTemplateId: string
   config: AuditConfig
+  originOverride?: string
   createdAt: string
 }
 

@@ -35,9 +35,9 @@ export const deleteCheckTemplate = (id: string) =>
 
 // Audits
 export const listAudits = () => invoke<Audit[]>('list_audits')
-export const createAudit = (data: { name: string; targetListId: string; checkTemplateId: string; config: { mode: string; batchSize: number; timeoutSecs: number } }) =>
+export const createAudit = (data: { name: string; targetListId: string; checkTemplateId: string; config: { mode: string; batchSize: number; timeoutSecs: number }; originOverride?: string }) =>
   invoke<Audit>('create_audit', data)
-export const updateAudit = (data: { id: string; name?: string; config?: { mode: string; batchSize: number; timeoutSecs: number } }) =>
+export const updateAudit = (data: { id: string; name?: string; config?: { mode: string; batchSize: number; timeoutSecs: number }; originOverride?: string }) =>
   invoke<Audit>('update_audit', data)
 export const deleteAudit = (id: string) =>
   invoke<void>('delete_audit', { id })

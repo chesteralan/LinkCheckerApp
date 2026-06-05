@@ -27,6 +27,7 @@ pub fn create_audit(
     target_list_id: String,
     check_template_id: String,
     config: AuditConfigInput,
+    origin_override: Option<String>,
 ) -> Result<Audit, String> {
     let audit = Audit {
         id: Uuid::new_v4().to_string(),
@@ -38,6 +39,7 @@ pub fn create_audit(
             batch_size: config.batch_size,
             timeout_secs: config.timeout_secs,
         },
+        origin_override: origin_override.filter(|o| !o.is_empty()),
         created_at: Utc::now().to_rfc3339(),
     };
 
@@ -48,12 +50,13 @@ pub fn create_audit(
     Ok(audit)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn update_audit(
     state: State<'_, AppState>,
     id: String,
     name: Option<String>,
     config: Option<AuditConfigInput>,
+    origin_override: Option<String>,
 ) -> Result<Audit, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
 
@@ -72,6 +75,9 @@ pub fn update_audit(
             batch_size: config.batch_size,
             timeout_secs: config.timeout_secs,
         };
+    }
+    if let Some(oo) = origin_override {
+        audit.origin_override = if oo.is_empty() { None } else { Some(oo) };
     }
 
     let result = audit.clone();
