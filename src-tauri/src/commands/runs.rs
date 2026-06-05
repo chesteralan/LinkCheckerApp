@@ -1,8 +1,17 @@
 use std::fs;
+use serde::Deserialize;
 use tauri::{AppHandle, State};
 
-use crate::models::AuditRun;
+use crate::models::*;
 use crate::AppState;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickRunConfig {
+    pub mode: String,
+    pub batch_size: u32,
+    pub timeout_secs: u64,
+}
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn scrape_links(url: String) -> Result<Vec<String>, String> {
@@ -31,6 +40,52 @@ pub async fn scrape_links(url: String) -> Result<Vec<String>, String> {
     links.dedup();
 
     Ok(links)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn quick_run(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    urls: Vec<String>,
+    checks: Vec<SelectorCheck>,
+    config: QuickRunConfig,
+    origin_override: Option<String>,
+    url_postfix: Option<String>,
+) -> Result<(), String> {
+    let audit = Audit {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: "Quick Audit".into(),
+        target_list_id: String::new(),
+        check_template_id: String::new(),
+        config: AuditConfig {
+            mode: config.mode,
+            batch_size: config.batch_size,
+            timeout_secs: config.timeout_secs,
+        },
+        origin_override: origin_override.filter(|o| !o.is_empty()),
+        url_postfix: url_postfix.filter(|p| !p.is_empty()),
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+
+    let target_list = TargetList {
+        id: String::new(),
+        name: "Quick URLs".into(),
+        urls,
+        created_at: String::new(),
+        updated_at: String::new(),
+    };
+
+    let check_template = CheckTemplate {
+        id: String::new(),
+        name: "Quick Checks".into(),
+        checks,
+        created_at: String::new(),
+        updated_at: String::new(),
+    };
+
+    state.checker.run(&app, &audit, &target_list, &check_template).await;
+
+    Ok(())
 }
 
 #[tauri::command(rename_all = "camelCase")]

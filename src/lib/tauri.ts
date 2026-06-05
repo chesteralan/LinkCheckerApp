@@ -4,6 +4,7 @@ import type {
   CheckTemplate,
   Audit,
   AuditRun,
+  SelectorCheck,
 } from '@/types'
 
 export function normalizeUrl(raw: string): string {
@@ -53,6 +54,9 @@ export const readFile = (path: string) =>
   invoke<string>('read_file', { path })
 
 // Runs
+export const runQuickAudit = (data: { urls: string[]; checks: SelectorCheck[]; config: { mode: string; batchSize: number; timeoutSecs: number }; originOverride?: string; urlPostfix?: string }) =>
+  invoke<void>('quick_run', data)
+
 export const listAllRuns = () => invoke<AuditRun[]>('list_all_runs')
 export const runAudit = (auditId: string, originOverride?: string, urlPostfix?: string) =>
   invoke<void>('run_audit', { auditId, originOverride, urlPostfix })

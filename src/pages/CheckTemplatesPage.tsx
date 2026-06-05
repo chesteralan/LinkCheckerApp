@@ -4,12 +4,16 @@ import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
 import type { CheckTemplate } from '@/types'
 
+interface Props {
+  onQuickAudit?: (templateId: string) => void
+}
+
 interface SelectorInput {
   selector: string
   label: string
 }
 
-export function CheckTemplatesPage() {
+export function CheckTemplatesPage({ onQuickAudit }: Props) {
   const { checkTemplates, loading, createCheckTemplate, updateCheckTemplate, deleteCheckTemplate } = useStore()
   const [editing, setEditing] = useState<CheckTemplate | null>(null)
   const [name, setName] = useState('')
@@ -177,6 +181,14 @@ export function CheckTemplatesPage() {
               </div>
             </div>
             <div className="flex gap-2 shrink-0">
+              {onQuickAudit && (
+                <button
+                  onClick={() => onQuickAudit(template.id)}
+                  className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:opacity-90 transition-opacity"
+                >
+                  Quick Audit
+                </button>
+              )}
               <button
                 onClick={() => openEdit(template)}
                 className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
