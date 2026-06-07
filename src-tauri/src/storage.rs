@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use crate::models::{AppData, AuditRun};
+use crate::models::{AppData, AuditRun, RunFileInfo};
 
 pub struct Storage {
     dir: PathBuf,
@@ -71,6 +71,38 @@ impl Storage {
         }
         runs.reverse();
         runs
+    }
+
+    pub fn list_run_files(&self) -> Vec<RunFileInfo> {
+        let hd = self.history_dir();
+        let mut infos: Vec<RunFileInfo> = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&hd) {
+            let mut names: Vec<String> = entries
+                .flatten()
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    if name.starts_with("run-") && name.ends_with(".json") {
+                        Some(name)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            names.sort();
+            names.reverse();
+            for name in names {
+                let stripped = name.strip_prefix("run-").and_then(|s| s.strip_suffix(".json"));
+                if let Some(body) = stripped {
+                    if let Some(sep) = body.rfind('-') {
+                        let id = body[sep + 1..].to_string();
+                        let raw_ts = body[..sep].to_string();
+                        let started_at = raw_ts.replace('-', ":");
+                        infos.push(RunFileInfo { id, started_at });
+                    }
+                }
+            }
+        }
+        infos
     }
 
     pub fn load_run(&self, run_id: &str) -> Result<AuditRun, String> {

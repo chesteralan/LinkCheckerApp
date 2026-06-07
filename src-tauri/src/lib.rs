@@ -68,6 +68,7 @@ pub fn run() {
             commands::runs::write_file,
             commands::runs::read_file,
             commands::runs::list_all_runs,
+            commands::runs::list_run_files,
             commands::runs::list_audit_runs,
             commands::runs::get_run_results,
             commands::runs::scrape_links,

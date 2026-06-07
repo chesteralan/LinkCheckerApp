@@ -238,6 +238,11 @@ pub fn read_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn list_run_files(state: State<'_, AppState>) -> Result<Vec<RunFileInfo>, String> {
+    Ok(state.storage.list_run_files())
+}
+
+#[tauri::command]
 pub fn list_all_runs(state: State<'_, AppState>) -> Result<Vec<AuditRun>, String> {
     let runs = state.storage.load_all_runs();
     Ok(runs)

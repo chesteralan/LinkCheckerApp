@@ -61,6 +61,7 @@ export const runQuickAudit = (data: { urls: string[]; checks: SelectorCheck[]; c
   invoke<void>('quick_run', data)
 
 export const listAllRuns = () => invoke<AuditRun[]>('list_all_runs')
+export const listRunFiles = () => invoke<{ id: string; startedAt: string }[]>('list_run_files')
 export const runAudit = (auditId: string, originOverride?: string, urlPostfix?: string) =>
   invoke<void>('run_audit', { auditId, originOverride, urlPostfix })
 export const cancelRun = () =>

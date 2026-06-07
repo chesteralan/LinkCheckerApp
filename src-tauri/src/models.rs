@@ -117,6 +117,13 @@ pub struct ScrapedSelector {
     pub type_name: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunFileInfo {
+    pub id: String,
+    pub started_at: String,
+}
+
 impl AppData {
     pub fn empty() -> Self {
         Self {
