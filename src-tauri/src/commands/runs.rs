@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use serde::Deserialize;
 use tauri::{AppHandle, State};
@@ -40,6 +41,83 @@ pub async fn scrape_links(url: String) -> Result<Vec<String>, String> {
     links.dedup();
 
     Ok(links)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeSelectorsOptions {
+    pub select_ids: bool,
+    pub select_classes: bool,
+    pub select_testids: bool,
+    pub custom_selector: String,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn scrape_selectors(url: String, options: ScrapeSelectorsOptions) -> Result<Vec<ScrapedSelector>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let html = client.get(&url).send().await
+        .map_err(|e| format!("Failed to fetch URL: {}", e))?
+        .text().await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    let document = scraper::Html::parse_document(&html);
+    let mut results = BTreeSet::new();
+
+    if options.select_ids {
+        if let Ok(sel) = scraper::Selector::parse("[id]") {
+            for el in document.select(&sel) {
+                if let Some(id) = el.value().attr("id").filter(|v| !v.is_empty()) {
+                    results.insert(format!("#{}", id));
+                }
+            }
+        }
+    }
+
+    if options.select_classes {
+        if let Ok(sel) = scraper::Selector::parse("[class]") {
+            let mut seen = BTreeSet::new();
+            for el in document.select(&sel) {
+                if let Some(class_str) = el.value().attr("class") {
+                    for cls in class_str.split_whitespace() {
+                        if !cls.is_empty() && seen.insert(cls.to_string()) {
+                            results.insert(format!(".{}", cls));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if options.select_testids {
+        if let Ok(sel) = scraper::Selector::parse("[data-testid]") {
+            for el in document.select(&sel) {
+                if let Some(tid) = el.value().attr("data-testid").filter(|v| !v.is_empty()) {
+                    results.insert(format!("[data-testid=\"{}\"]", tid));
+                }
+            }
+        }
+    }
+
+    if !options.custom_selector.is_empty() {
+        if let Ok(sel) = scraper::Selector::parse(&options.custom_selector) {
+            if document.select(&sel).next().is_some() {
+                results.insert(options.custom_selector.clone());
+            }
+        }
+    }
+
+    Ok(results.into_iter().map(|s| ScrapedSelector {
+        selector: s.clone(),
+        type_name: if s.starts_with('#') { "id".into() }
+            else if s.starts_with('.') { "class".into() }
+            else if s.contains("data-testid") { "data-testid".into() }
+            else { "custom".into() },
+    }).collect())
 }
 
 #[tauri::command(rename_all = "camelCase")]

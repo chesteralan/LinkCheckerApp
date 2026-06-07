@@ -47,6 +47,9 @@ export const deleteAudit = (id: string) =>
 export const scrapeLinks = (url: string) =>
   invoke<string[]>('scrape_links', { url })
 
+export const scrapeSelectors = (url: string, options: { selectIds: boolean; selectClasses: boolean; selectTestids: boolean; customSelector: string }) =>
+  invoke<{ selector: string; typeName: string }[]>('scrape_selectors', { url, options })
+
 // File I/O
 export const writeFile = (path: string, content: string) =>
   invoke<void>('write_file', { path, content })

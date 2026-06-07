@@ -1,4 +1,7 @@
+import { useState } from 'react'
 import { useStore } from '@/hooks/useStore'
+import { Modal } from '@/components/Modal'
+import { scrapeSelectors } from '@/lib/tauri'
 import type { CheckTemplate } from '@/types'
 
 interface Props {
@@ -10,6 +13,15 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
   const { checkTemplates, patchCheckTemplate } = useStore()
   const live = checkTemplates.find((ct) => ct.id === template.id) ?? template
   const checks = live.checks
+
+  const [showScanModal, setShowScanModal] = useState(false)
+  const [scanUrl, setScanUrl] = useState('')
+  const [scanIds, setScanIds] = useState(true)
+  const [scanClasses, setScanClasses] = useState(true)
+  const [scanTestids, setScanTestids] = useState(true)
+  const [scanCustom, setScanCustom] = useState('')
+  const [scanning, setScanning] = useState(false)
+  const [scanResults, setScanResults] = useState<{ selector: string; typeName: string }[]>([])
 
   function persist(updated: { selector: string; label: string }[]) {
     patchCheckTemplate(template.id, { checks: updated })
@@ -48,6 +60,25 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
     persist(updated)
   }
 
+  async function handleScan() {
+    if (!scanUrl.trim()) return
+    setScanning(true)
+    setScanResults([])
+    try {
+      const results = await scrapeSelectors(scanUrl, {
+        selectIds: scanIds,
+        selectClasses: scanClasses,
+        selectTestids: scanTestids,
+        customSelector: scanCustom,
+      })
+      setScanResults(results)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setScanning(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -55,6 +86,12 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
           <button onClick={onBack} className="text-sm text-primary hover:underline">&larr; Templates</button>
           <h2 className="text-2xl font-bold">{live.name}</h2>
         </div>
+        <button
+          onClick={() => setShowScanModal(true)}
+          className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
+        >
+          Scan URL
+        </button>
       </div>
 
       <div className="border border-border rounded-lg p-4 space-y-4">
@@ -124,6 +161,82 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
           ))}
         </div>
       </div>
+
+      {showScanModal && (
+        <Modal title="Scan URL for Selectors" onClose={() => setShowScanModal(false)}>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium block mb-1">URL</label>
+              <input
+                type="text"
+                value={scanUrl}
+                onChange={(e) => setScanUrl(e.target.value)}
+                className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="https://example.com"
+                autoFocus
+              />
+            </div>
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">Selector Types</legend>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={scanIds} onChange={(e) => setScanIds(e.target.checked)} className="accent-primary" />
+                IDs (<code className="text-xs text-muted-foreground">#my-id</code>)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={scanClasses} onChange={(e) => setScanClasses(e.target.checked)} className="accent-primary" />
+                Classes (<code className="text-xs text-muted-foreground">.my-class</code>)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={scanTestids} onChange={(e) => setScanTestids(e.target.checked)} className="accent-primary" />
+                data-testid (<code className="text-xs text-muted-foreground">[data-testid="x"]</code>)
+              </label>
+            </fieldset>
+            <div>
+              <label className="text-sm font-medium block mb-1">Custom Selector (verify it exists)</label>
+              <input
+                type="text"
+                value={scanCustom}
+                onChange={(e) => setScanCustom(e.target.value)}
+                className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="e.g. .header .nav-link"
+              />
+            </div>
+            <button
+              onClick={handleScan}
+              disabled={!scanUrl.trim() || scanning}
+              className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {scanning ? 'Scanning...' : 'Scan'}
+            </button>
+            {scanResults.length > 0 && (
+              <div>
+                <label className="text-sm font-medium block mb-1">
+                  Found {scanResults.length} selector{scanResults.length !== 1 ? 's' : ''}
+                </label>
+                <div className="max-h-48 overflow-y-auto border border-border rounded-md divide-y divide-border">
+                  {scanResults.map((r, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        persist([...checks, { selector: r.selector, label: '' }])
+                        setScanResults((prev) => prev.filter((_, j) => j !== i))
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm font-mono hover:bg-muted transition-colors flex items-center justify-between"
+                    >
+                      <span>{r.selector}</span>
+                      <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{r.typeName}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">Click a selector to add it to the template</p>
+              </div>
+            )}
+            {!scanning && scanResults.length === 0 && scanUrl.trim() && (
+              <p className="text-sm text-muted-foreground">No selectors found for the selected types.</p>
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

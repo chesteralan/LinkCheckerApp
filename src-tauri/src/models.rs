@@ -110,6 +110,13 @@ pub struct AppData {
     pub audits: Vec<Audit>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapedSelector {
+    pub selector: String,
+    pub type_name: String,
+}
+
 impl AppData {
     pub fn empty() -> Self {
         Self {

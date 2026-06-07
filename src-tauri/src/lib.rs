@@ -73,6 +73,7 @@ pub fn run() {
             commands::runs::list_audit_runs,
             commands::runs::get_run_results,
             commands::runs::scrape_links,
+            commands::runs::scrape_selectors,
             commands::runs::quick_run,
             commands::runs::get_data_path,
             commands::runs::clear_history,
