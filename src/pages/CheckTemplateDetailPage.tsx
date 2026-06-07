@@ -213,10 +213,11 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
                   Found {scanResults.length} selector{scanResults.length !== 1 ? 's' : ''}
                 </label>
                 <div className="max-h-48 overflow-y-auto border border-border rounded-md divide-y divide-border">
-                  {scanResults.map((r, i) => (
+                  {scanResults.filter((r) => !checks.some((c) => c.selector === r.selector)).map((r, i) => (
                     <button
                       key={i}
                       onClick={() => {
+                        if (checks.some((c) => c.selector === r.selector)) return
                         persist([...checks, { selector: r.selector, label: r.selector }])
                         setScanResults((prev) => prev.filter((_, j) => j !== i))
                       }}
