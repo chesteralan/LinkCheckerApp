@@ -236,8 +236,7 @@ export function QuickAuditPage({ template, onBack }: Props) {
         <p className="text-sm text-muted-foreground">Press "Run Audit" to start checking URLs.</p>
       )}
 
-      {showSaveModal && (
-        <Modal title="Save to Audits" onClose={() => setShowSaveModal(false)}>
+      <Modal title="Save to Audits" open={showSaveModal} onClose={() => setShowSaveModal(false)}>
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium block mb-1">Audit Name</label>
@@ -277,7 +276,6 @@ export function QuickAuditPage({ template, onBack }: Props) {
             </div>
           </div>
         </Modal>
-      )}
     </div>
   )
 }

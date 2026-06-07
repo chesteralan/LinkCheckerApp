@@ -162,8 +162,7 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
         </div>
       </div>
 
-      {showScanModal && (
-        <Modal title="Scan URL for Selectors" onClose={() => setShowScanModal(false)}>
+        <Modal title="Scan URL for Selectors" open={showScanModal} onClose={() => setShowScanModal(false)}>
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium block mb-1">URL</label>
@@ -218,7 +217,7 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
                     <button
                       key={i}
                       onClick={() => {
-                        persist([...checks, { selector: r.selector, label: '' }])
+                        persist([...checks, { selector: r.selector, label: r.selector }])
                         setScanResults((prev) => prev.filter((_, j) => j !== i))
                       }}
                       className="w-full text-left px-3 py-2 text-sm font-mono hover:bg-muted transition-colors flex items-center justify-between"
@@ -236,7 +235,6 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
             )}
           </div>
         </Modal>
-      )}
     </div>
   )
 }
