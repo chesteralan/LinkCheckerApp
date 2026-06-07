@@ -5,10 +5,14 @@ pub struct Storage {
     dir: PathBuf,
 }
 
-fn datetime_to_timestamp(s: &str) -> i64 {
-    chrono::DateTime::parse_from_rfc3339(s)
-        .map(|dt| dt.timestamp_millis())
-        .unwrap_or(0)
+fn format_datetime_for_filename(s: &str) -> String {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        dt.format("%Y-%m-%d_%H-%M-%S").to_string()
+    } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.fZ") {
+        dt.format("%Y-%m-%d_%H-%M-%S").to_string()
+    } else {
+        s.replace(':', "-").replace('.', "-").replace('Z', "")
+    }
 }
 
 impl Storage {
@@ -31,7 +35,7 @@ impl Storage {
     }
 
     fn run_filepath(&self, run: &AuditRun) -> PathBuf {
-        let ts = datetime_to_timestamp(&run.started_at);
+        let ts = format_datetime_for_filename(&run.started_at);
         self.history_dir().join(format!("run-{}-{}.json", ts, run.id))
     }
 
@@ -79,40 +83,37 @@ impl Storage {
         let hd = self.history_dir();
         let mut infos: Vec<RunFileInfo> = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&hd) {
-            let mut names: Vec<String> = entries
+            let mut entries: Vec<_> = entries
                 .flatten()
-                .filter_map(|e| {
+                .filter(|e| {
                     let name = e.file_name().to_string_lossy().to_string();
-                    if name.starts_with("run-") && name.ends_with(".json") {
-                        Some(name)
-                    } else {
-                        None
-                    }
+                    name.starts_with("run-") && name.ends_with(".json")
                 })
                 .collect();
-            names.sort();
-            names.reverse();
-            for name in names {
+            entries.sort_by_key(|e| {
+                std::fs::metadata(e.path())
+                    .and_then(|m| m.created())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+            });
+            entries.reverse();
+            for entry in entries {
+                let name = entry.file_name().to_string_lossy().to_string();
                 let stripped = name.strip_prefix("run-").and_then(|s| s.strip_suffix(".json"));
                 if let Some(body) = stripped {
                     if let Some(sep) = body.rfind('-') {
                         let id = body[sep + 1..].to_string();
-                        let ts_part = body[..sep].to_string();
-                        let (started_at, timestamp_ms) = if ts_part.chars().all(|c| c.is_ascii_digit()) {
-                            let ms: i64 = ts_part.parse().unwrap_or(0);
-                            if let Some(dt) = chrono::DateTime::from_timestamp_millis(ms) {
-                                (dt.to_rfc3339(), ms)
-                            } else {
-                                continue;
-                            }
+                        let ms = std::fs::metadata(entry.path())
+                            .and_then(|m| m.created())
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::SystemTime::UNIX_EPOCH).ok())
+                            .map(|d| d.as_millis() as i64)
+                            .unwrap_or(0);
+                        let started_at = if let Some(dt) = chrono::DateTime::from_timestamp_millis(ms) {
+                            dt.to_rfc3339()
                         } else {
-                            let s = ts_part.replace('-', ":");
-                            let ms = chrono::DateTime::parse_from_rfc3339(&s)
-                                .map(|dt| dt.timestamp_millis())
-                                .unwrap_or(0);
-                            (s, ms)
+                            String::new()
                         };
-                        infos.push(RunFileInfo { id, started_at, timestamp_ms });
+                        infos.push(RunFileInfo { id, started_at, timestamp_ms: ms });
                     }
                 }
             }

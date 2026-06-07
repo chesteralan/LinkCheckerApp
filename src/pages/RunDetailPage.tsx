@@ -13,6 +13,7 @@ export function RunDetailPage({ runId, onBack }: Props) {
   const { audits, targetLists, checkTemplates } = useStore()
   const [run, setRun] = useState<AuditRun | null>(null)
   const [filter, setFilter] = useState<'all' | 'passed' | 'failed' | 'errored'>('all')
+  const [searchQuery, setSearchQuery] = useState('')
   const [view, setView] = useState<'detailed' | 'table'>('detailed')
 
   useEffect(() => {
@@ -40,9 +41,13 @@ export function RunDetailPage({ runId, onBack }: Props) {
   }
 
   const displayedResults = run.results.filter((r) => {
-    if (filter === 'passed') return !r.error && r.checks.every((c) => c.found)
-    if (filter === 'failed') return !r.error && r.checks.some((c) => !c.found)
-    if (filter === 'errored') return !!r.error
+    if (filter === 'passed' && (r.error || !r.checks.every((c) => c.found))) return false
+    if (filter === 'failed' && (r.error || !r.checks.some((c) => !c.found))) return false
+    if (filter === 'errored' && !r.error) return false
+    if (searchQuery) {
+      const text = JSON.stringify(r).toLowerCase()
+      if (!text.includes(searchQuery.toLowerCase())) return false
+    }
     return true
   })
 
@@ -84,6 +89,13 @@ export function RunDetailPage({ runId, onBack }: Props) {
         >
           Table
         </button>
+        <input
+          type="text"
+          placeholder="Filter by any value..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="ml-auto px-3 py-1.5 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary w-64"
+        />
       </div>
 
       <div className="flex flex-wrap gap-4 text-sm">
@@ -207,8 +219,8 @@ export function RunDetailPage({ runId, onBack }: Props) {
                     )}
                   </td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{result.responseTimeMs}ms</td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[200px]" title={result.pageTitle}>
-                    {result.pageTitle}
+                  <td className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[200px]" title={result.pageTitle ?? undefined}>
+                    {result.pageTitle ?? '—'}
                   </td>
                   {selectors.map((sel) => {
                     const cr = result.checks.find((c) => c.selectorCheckId === sel.id)
