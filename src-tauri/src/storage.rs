@@ -5,8 +5,10 @@ pub struct Storage {
     dir: PathBuf,
 }
 
-fn sanitize_datetime(s: &str) -> String {
-    s.replace(':', "-").replace('.', "-").replace('Z', "")
+fn datetime_to_timestamp(s: &str) -> i64 {
+    chrono::DateTime::parse_from_rfc3339(s)
+        .map(|dt| dt.timestamp_millis())
+        .unwrap_or(0)
 }
 
 impl Storage {
@@ -29,7 +31,7 @@ impl Storage {
     }
 
     fn run_filepath(&self, run: &AuditRun) -> PathBuf {
-        let ts = sanitize_datetime(&run.started_at);
+        let ts = datetime_to_timestamp(&run.started_at);
         self.history_dir().join(format!("run-{}-{}.json", ts, run.id))
     }
 
@@ -95,8 +97,17 @@ impl Storage {
                 if let Some(body) = stripped {
                     if let Some(sep) = body.rfind('-') {
                         let id = body[sep + 1..].to_string();
-                        let raw_ts = body[..sep].to_string();
-                        let started_at = raw_ts.replace('-', ":");
+                        let ts_part = body[..sep].to_string();
+                        let started_at = if ts_part.chars().all(|c| c.is_ascii_digit()) {
+                            let ms: i64 = ts_part.parse().unwrap_or(0);
+                            if let Some(dt) = chrono::DateTime::from_timestamp_millis(ms) {
+                                dt.to_rfc3339()
+                            } else {
+                                continue;
+                            }
+                        } else {
+                            ts_part.replace('-', ":")
+                        };
                         infos.push(RunFileInfo { id, started_at });
                     }
                 }

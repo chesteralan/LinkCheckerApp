@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { listRunFiles, clearHistory } from '@/lib/tauri'
 
-export function RunHistoryPage() {
+interface Props {
+  onViewRun: (runId: string) => void
+}
+
+export function RunHistoryPage({ onViewRun }: Props) {
   const [files, setFiles] = useState<{ id: string; startedAt: string }[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -50,6 +54,7 @@ export function RunHistoryPage() {
             <tr className="bg-muted/50 text-left">
               <th className="px-4 py-2 font-medium">Date</th>
               <th className="px-4 py-2 font-medium">Type</th>
+              <th className="px-4 py-2 font-medium"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -59,6 +64,14 @@ export function RunHistoryPage() {
                   {new Date(f.startedAt).toLocaleString()}
                 </td>
                 <td className="px-4 py-2.5">Quick Audit</td>
+                <td className="px-4 py-2.5 text-right">
+                  <button
+                    onClick={() => onViewRun(f.id)}
+                    className="text-primary hover:underline text-xs font-medium"
+                  >
+                    View Details
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

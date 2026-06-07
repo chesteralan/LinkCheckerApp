@@ -108,7 +108,7 @@ function App() {
           ) : activePage === 'history' && runDetailId ? (
             <RunDetailPage runId={runDetailId} onBack={() => setRunDetailId(null)} />
           ) : activePage === 'history' ? (
-            <RunHistoryPage />
+            <RunHistoryPage onViewRun={handleViewRun} />
           ) : null}
           </ErrorBoundary>
         </main>
