@@ -97,7 +97,5 @@ pub fn delete_audit(state: State<'_, AppState>, id: String) -> Result<(), String
     data.audits.retain(|a| a.id != id);
     state.storage.save(&data)?;
 
-    let mut history = state.history.lock().map_err(|e| e.to_string())?;
-    history.retain(|r| r.audit_id != id);
-    state.storage.save_history(&history)
+    state.storage.delete_audit_runs(&id)
 }

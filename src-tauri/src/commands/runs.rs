@@ -163,9 +163,7 @@ pub async fn quick_run(
 
     let run = state.checker.run(&app, &audit, &target_list, &check_template).await;
 
-    let mut history = state.history.lock().map_err(|e| e.to_string())?;
-    history.push(run);
-    state.storage.save_history(&history)?;
+    state.storage.save_run(&run)?;
 
     Ok(())
 }
@@ -218,9 +216,7 @@ pub async fn run_audit(
 
     let run = state.checker.run(&app, &audit, &target_list, &check_template).await;
 
-    let mut history = state.history.lock().map_err(|e| e.to_string())?;
-    history.push(run);
-    state.storage.save_history(&history)?;
+    state.storage.save_run(&run)?;
 
     Ok(())
 }
@@ -243,36 +239,40 @@ pub fn read_file(path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn list_all_runs(state: State<'_, AppState>) -> Result<Vec<AuditRun>, String> {
-    let history = state.history.lock().map_err(|e| e.to_string())?;
-    Ok(history.clone())
+    let runs = state.storage.load_all_runs();
+    Ok(runs)
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn list_audit_runs(state: State<'_, AppState>, audit_id: String) -> Result<Vec<AuditRun>, String> {
-    let history = state.history.lock().map_err(|e| e.to_string())?;
-    Ok(history.iter().filter(|r| r.audit_id == audit_id).cloned().collect())
+    let runs = state.storage.load_all_runs();
+    Ok(runs.into_iter().filter(|r| r.audit_id == audit_id).collect())
 }
 
 #[tauri::command]
 pub fn get_data_path(state: State<'_, AppState>) -> Result<String, String> {
-    let path = state.storage.data_path();
+    let path = state.storage.app_dir();
     Ok(path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
+pub fn open_data_folder(state: State<'_, AppState>) -> Result<(), String> {
+    let path = state.storage.app_dir();
+    let path_str = path.to_string_lossy();
+    std::process::Command::new("open")
+        .arg(path_str.as_ref())
+        .spawn()
+        .map_err(|e| format!("Failed to open folder: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_run_results(state: State<'_, AppState>, run_id: String) -> Result<AuditRun, String> {
-    let history = state.history.lock().map_err(|e| e.to_string())?;
-    history
-        .iter()
-        .find(|r| r.id == run_id)
-        .cloned()
-        .ok_or_else(|| "Run not found".to_string())
+    state.storage.load_run(&run_id)
 }
 
 #[tauri::command]
 pub fn clear_history(state: State<'_, AppState>) -> Result<(), String> {
-    let mut history = state.history.lock().map_err(|e| e.to_string())?;
-    history.clear();
-    state.storage.clear_history()?;
+    state.storage.clear_all_runs()?;
     Ok(())
 }
