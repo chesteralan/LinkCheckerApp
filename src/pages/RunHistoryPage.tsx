@@ -6,7 +6,7 @@ interface Props {
 }
 
 export function RunHistoryPage({ onViewRun }: Props) {
-  const [files, setFiles] = useState<{ id: string; startedAt: string }[]>([])
+  const [files, setFiles] = useState<{ id: string; startedAt: string; timestampMs: number }[]>([])
   const [loading, setLoading] = useState(true)
 
   function load() {
@@ -61,7 +61,7 @@ export function RunHistoryPage({ onViewRun }: Props) {
             {files.map((f) => (
               <tr key={f.id} className="hover:bg-muted/30">
                 <td className="px-4 py-2.5 text-muted-foreground">
-                  {new Date(f.startedAt).toLocaleString()}
+                  {new Date(f.timestampMs).toLocaleString()}
                 </td>
                 <td className="px-4 py-2.5">Quick Audit</td>
                 <td className="px-4 py-2.5 text-right">

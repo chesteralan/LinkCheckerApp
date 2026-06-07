@@ -122,6 +122,7 @@ pub struct ScrapedSelector {
 pub struct RunFileInfo {
     pub id: String,
     pub started_at: String,
+    pub timestamp_ms: i64,
 }
 
 impl AppData {

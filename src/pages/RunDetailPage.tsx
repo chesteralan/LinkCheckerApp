@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '@/hooks/useStore'
-import { listAllRuns } from '@/lib/tauri'
+import { getRunResults } from '@/lib/tauri'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { AuditRun, SelectorCheck } from '@/types'
 
@@ -16,10 +16,7 @@ export function RunDetailPage({ runId, onBack }: Props) {
   const [view, setView] = useState<'detailed' | 'table'>('detailed')
 
   useEffect(() => {
-    listAllRuns().then((runs) => {
-      const found = runs.find((r) => r.id === runId)
-      if (found) setRun(found)
-    })
+    getRunResults(runId).then(setRun).catch(() => setRun(null))
   }, [runId])
 
   if (!run) {

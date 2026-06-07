@@ -98,17 +98,21 @@ impl Storage {
                     if let Some(sep) = body.rfind('-') {
                         let id = body[sep + 1..].to_string();
                         let ts_part = body[..sep].to_string();
-                        let started_at = if ts_part.chars().all(|c| c.is_ascii_digit()) {
+                        let (started_at, timestamp_ms) = if ts_part.chars().all(|c| c.is_ascii_digit()) {
                             let ms: i64 = ts_part.parse().unwrap_or(0);
                             if let Some(dt) = chrono::DateTime::from_timestamp_millis(ms) {
-                                dt.to_rfc3339()
+                                (dt.to_rfc3339(), ms)
                             } else {
                                 continue;
                             }
                         } else {
-                            ts_part.replace('-', ":")
+                            let s = ts_part.replace('-', ":");
+                            let ms = chrono::DateTime::parse_from_rfc3339(&s)
+                                .map(|dt| dt.timestamp_millis())
+                                .unwrap_or(0);
+                            (s, ms)
                         };
-                        infos.push(RunFileInfo { id, started_at });
+                        infos.push(RunFileInfo { id, started_at, timestamp_ms });
                     }
                 }
             }
