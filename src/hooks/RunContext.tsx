@@ -7,6 +7,7 @@ export interface RunnerState {
   running: boolean
   run: AuditRun | null
   progress: { checked: number; total: number } | null
+  runPagePath: string | null
 }
 
 export interface RunContextValue extends RunnerState {
@@ -17,6 +18,7 @@ export interface RunContextValue extends RunnerState {
     config: { mode: string; batchSize: number; timeoutSecs: number },
     originOverride?: string,
     urlPostfix?: string,
+    returnPath?: string,
   ) => Promise<void>
   cancel: () => Promise<void>
 }
@@ -28,6 +30,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
     running: false,
     run: null,
     progress: null,
+    runPagePath: null,
   })
   const unlisteners = useRef<UnlistenFn[]>([])
   const runningRef = useRef(false)
@@ -77,17 +80,18 @@ export function RunProvider({ children }: { children: ReactNode }) {
           running: false,
           run: event.payload,
           progress: null,
+          runPagePath: null,
         })
         cleanup()
       })
 
       const unlistenCancelled = await listen('run:cancelled', () => {
-        setState((s) => ({ ...s, running: false, progress: null }))
+        setState((s) => ({ ...s, running: false, progress: null, runPagePath: null }))
         cleanup()
       })
 
       const unlistenError = await listen<{ message: string }>('run:error', () => {
-        setState((s) => ({ ...s, running: false }))
+        setState((s) => ({ ...s, running: false, runPagePath: null }))
         cleanup()
       })
 
@@ -103,7 +107,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
         await cleanup()
       }
 
-      setState({ running: true, run: null, progress: null })
+      setState({ running: true, run: null, progress: null, runPagePath: `/audits/${auditId}` })
       await setupListeners(auditId)
       await runAudit(auditId, originOverride, urlPostfix)
     },
@@ -117,13 +121,14 @@ export function RunProvider({ children }: { children: ReactNode }) {
       config: { mode: string; batchSize: number; timeoutSecs: number },
       originOverride?: string,
       urlPostfix?: string,
+      returnPath?: string,
     ) => {
       if (runningRef.current) {
         await cancelRun()
         await cleanup()
       }
 
-      setState({ running: true, run: null, progress: null })
+      setState({ running: true, run: null, progress: null, runPagePath: returnPath ?? null })
       await setupListeners('')
       await runQuickAudit({ urls, checks, config, originOverride, urlPostfix })
     },

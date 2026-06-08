@@ -54,7 +54,7 @@ export function QuickAuditPage() {
       .map((u) => normalizeUrl(u))
       .filter(Boolean)
     if (urls.length === 0) return
-    await runner.startQuick(urls, t.checks, { mode, batchSize, timeoutSecs })
+    await runner.startQuick(urls, t.checks, { mode, batchSize, timeoutSecs }, undefined, undefined, `/check-templates/${t.id}/quick-audit`)
   }
 
   return (

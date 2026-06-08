@@ -20,7 +20,7 @@ declare const __APP_VERSION__: string
 function App() {
   const navigate = useNavigate()
   const [dataPath, setDataPath] = useState('')
-  const { running, run, progress, cancel } = useRun()
+  const { running, runPagePath, progress, cancel } = useRun()
 
   useEffect(() => {
     getDataPath()
@@ -43,11 +43,11 @@ function App() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
-                if (run?.auditId) navigate(`/audits/${run.auditId}`)
+                if (runPagePath) navigate(runPagePath)
               }}
-              disabled={!run?.auditId}
+              disabled={!runPagePath}
               className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:pointer-events-none"
-              title={run?.auditId ? 'View running audit' : undefined}
+              title={runPagePath ? 'View running audit' : undefined}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
               <span>

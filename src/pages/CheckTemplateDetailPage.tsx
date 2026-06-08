@@ -24,6 +24,8 @@ export function CheckTemplateDetailPage() {
     return <div className="text-muted-foreground">Template not found.</div>
   }
   const t = template
+  const existingSelectors = new Set(checks.map((c) => c.selector))
+  const filteredScanResults = scanResults.filter((sr) => !existingSelectors.has(sr.selector))
 
   function persist(updated: { selector: string; label: string }[]) {
     patchCheckTemplate(t.id, { checks: updated })
@@ -216,29 +218,42 @@ export function CheckTemplateDetailPage() {
 
           {scanResults.length > 0 && (
             <div>
-              <h4 className="text-sm font-medium mb-2">Found {scanResults.length} selectors</h4>
-              <div className="max-h-60 overflow-y-auto space-y-1">
-                {scanResults.map((sr, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between gap-2 text-sm border border-border rounded p-2"
-                  >
-                    <div className="truncate">
-                      <code className="text-xs bg-muted px-1 rounded">{sr.selector}</code>
-                      <span className="text-muted-foreground ml-2 text-xs">{sr.typeName}</span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        persist([...checks, { selector: sr.selector, label: sr.typeName }])
-                        setScanResults((prev) => prev.filter((_, j) => j !== i))
-                      }}
-                      className="text-xs text-primary hover:underline shrink-0"
-                    >
-                      Add
-                    </button>
+              {filteredScanResults.length === 0 ? (
+                <p className="text-sm text-muted-foreground">All selectors already in list.</p>
+              ) : (
+                <>
+                  <h4 className="text-sm font-medium mb-2">
+                    Found {scanResults.length} selectors
+                    {filteredScanResults.length < scanResults.length && (
+                      <span className="text-muted-foreground font-normal">
+                        {' '}({scanResults.length - filteredScanResults.length} already in list)
+                      </span>
+                    )}
+                  </h4>
+                  <div className="max-h-60 overflow-y-auto space-y-1">
+                    {filteredScanResults.map((sr) => (
+                      <div
+                        key={sr.selector}
+                        className="flex items-center justify-between gap-2 text-sm border border-border rounded p-2"
+                      >
+                        <div className="truncate">
+                          <code className="text-xs bg-muted px-1 rounded">{sr.selector}</code>
+                          <span className="text-muted-foreground ml-2 text-xs">{sr.typeName}</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            persist([...checks, { selector: sr.selector, label: sr.selector }])
+                            setScanResults((prev) => prev.filter((p) => p.selector !== sr.selector))
+                          }}
+                          className="text-xs text-primary hover:underline shrink-0"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </>
+              )}
             </div>
           )}
 
