@@ -281,3 +281,20 @@ pub fn clear_history(state: State<'_, AppState>) -> Result<(), String> {
     state.storage.clear_all_runs()?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn prune_history(state: State<'_, AppState>) -> Result<(), String> {
+    let data = state.data.lock().map_err(|e| e.to_string())?;
+    let max_days = data.max_history_days;
+    drop(data);
+    state.storage.prune_history(max_days)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_history_retention(state: State<'_, AppState>, days: u32) -> Result<(), String> {
+    let mut data = state.data.lock().map_err(|e| e.to_string())?;
+    data.max_history_days = days;
+    state.storage.save(&data)?;
+    Ok(())
+}

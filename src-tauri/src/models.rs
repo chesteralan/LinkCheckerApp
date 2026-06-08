@@ -108,6 +108,12 @@ pub struct AppData {
     pub target_lists: Vec<TargetList>,
     pub check_templates: Vec<CheckTemplate>,
     pub audits: Vec<Audit>,
+    #[serde(default = "default_max_history_days")]
+    pub max_history_days: u32,
+}
+
+fn default_max_history_days() -> u32 {
+    90
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +137,7 @@ impl AppData {
             target_lists: Vec::new(),
             check_templates: Vec::new(),
             audits: Vec::new(),
+            max_history_days: default_max_history_days(),
         }
     }
 }

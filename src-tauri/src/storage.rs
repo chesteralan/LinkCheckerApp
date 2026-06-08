@@ -173,6 +173,26 @@ impl Storage {
         Ok(())
     }
 
+    pub fn prune_history(&self, max_days: u32) -> Result<(), String> {
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(max_days as i64);
+        let hd = self.history_dir();
+        if let Ok(entries) = std::fs::read_dir(&hd) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    if let Ok(run) = serde_json::from_str::<AuditRun>(&content) {
+                        if let Ok(started) = chrono::DateTime::parse_from_rfc3339(&run.started_at) {
+                            if started < cutoff {
+                                std::fs::remove_file(&path).ok();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn delete_audit_runs(&self, audit_id: &str) -> Result<(), String> {
         let hd = self.history_dir();
         if let Ok(entries) = std::fs::read_dir(&hd) {

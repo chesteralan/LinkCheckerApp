@@ -49,12 +49,12 @@
 - [x] **Undo / confirm on delete** — Soft-delete or undo toast for accidental deletions
 - [x] **Inline URL validator** — Validate URL syntax as the user types in target list editor
 - [x] **Drag-and-drop reorder** — Reorder checks within a template via drag-and-drop
-- [ ] **Resizable columns** — Resizable columns in the run detail table view
+- [x] **Resizable columns** — Resizable columns in the run detail table view
 - [x] **Virtual scrolling** — Virtualize large result sets (1000s of URLs) for performance
 
 ## Phase 7 — Performance & Scale ⬜
-- [ ] **Pagination / lazy-load** — Load run history in pages instead of all at once
-- [ ] **Result pruning** — Configurable retention policy (auto-delete runs older than N days)
+- [x] **Pagination / lazy-load** — Load run history in pages instead of all at once
+- [x] **Result pruning** — Configurable retention policy (auto-delete runs older than N days)
 - [ ] **Large-file streaming** — Stream run results to disk instead of holding all in memory
 - [ ] **Concurrent URL scrape** — Scrape selectors from multiple pages at once (currently one-at-a-time)
 - [ ] **Incremental data save** — Save results incrementally during a run (recovery on crash)

@@ -79,3 +79,5 @@ export const getRunResults = (runId: string) => invoke<AuditRun>('get_run_result
 export const getDataPath = () => invoke<string>('get_data_path')
 export const openDataFolder = () => invoke<void>('open_data_folder')
 export const clearHistory = () => invoke<void>('clear_history')
+export const pruneHistory = () => invoke<void>('prune_history')
+export const setHistoryRetention = (days: number) => invoke<void>('set_history_retention', { days })

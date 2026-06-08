@@ -213,15 +213,15 @@ export function RunDetailPage() {
         )
       ) : (
         <div className="border border-border rounded-lg overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
             <thead>
               <tr className="bg-muted/50 text-left">
-                <th className="px-3 py-2 font-medium">URL</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Time</th>
-                <th className="px-3 py-2 font-medium">Title</th>
+                <th className="px-3 py-2 font-medium w-64 resize-x overflow-hidden">URL</th>
+                <th className="px-3 py-2 font-medium w-20 resize-x overflow-hidden">Status</th>
+                <th className="px-3 py-2 font-medium w-20 resize-x overflow-hidden">Time</th>
+                <th className="px-3 py-2 font-medium w-48 resize-x overflow-hidden">Title</th>
                 {selectors.map((sel) => (
-                  <th key={sel.id} className="px-3 py-2 font-medium">
+                  <th key={sel.id} className="px-3 py-2 font-medium min-w-24 resize-x overflow-hidden">
                     {sel.label}
                   </th>
                 ))}
