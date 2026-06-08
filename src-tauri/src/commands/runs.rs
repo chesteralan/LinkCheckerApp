@@ -181,6 +181,7 @@ pub async fn quick_run(
         origin_override: origin_override.filter(|o| !o.is_empty()),
         url_postfix: url_postfix.filter(|p| !p.is_empty()),
         created_at: chrono::Utc::now().to_rfc3339(),
+        pinned: false,
     };
 
     let target_list = TargetList {
@@ -189,6 +190,7 @@ pub async fn quick_run(
         urls,
         created_at: String::new(),
         updated_at: String::new(),
+        pinned: false,
     };
 
     let check_template = CheckTemplate {
@@ -197,6 +199,7 @@ pub async fn quick_run(
         checks,
         created_at: String::new(),
         updated_at: String::new(),
+        pinned: false,
     };
 
     let run = state.checker.run(&app, &audit, &target_list, &check_template).await;

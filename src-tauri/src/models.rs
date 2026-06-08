@@ -8,6 +8,8 @@ pub struct TargetList {
     pub urls: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -42,6 +44,8 @@ pub struct CheckTemplate {
     pub checks: Vec<SelectorCheck>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +80,8 @@ pub struct Audit {
     pub origin_override: Option<String>,
     pub url_postfix: Option<String>,
     pub created_at: String,
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

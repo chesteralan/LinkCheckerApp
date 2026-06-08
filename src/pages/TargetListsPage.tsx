@@ -222,13 +222,22 @@ export function TargetListsPage() {
       )}
 
       <div className="space-y-2">
-        {targetLists.map((list) => (
+        {[...targetLists].sort((a, b) => Number(b.pinned) - Number(a.pinned)).map((list) => (
           <div key={list.id} className="border border-border rounded-lg p-4 flex items-center justify-between">
-            <div>
-              <h3 className="font-medium">{list.name}</h3>
-              <p className="text-sm text-muted-foreground">
-                {list.urls.length} URL{list.urls.length !== 1 ? 's' : ''}
-              </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => updateTargetList(list.id, { pinned: !list.pinned })}
+                className="text-sm hover:scale-110 transition-transform"
+                title={list.pinned ? 'Unpin' : 'Pin'}
+              >
+                {list.pinned ? '★' : '☆'}
+              </button>
+              <div>
+                <h3 className="font-medium">{list.name}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {list.urls.length} URL{list.urls.length !== 1 ? 's' : ''}
+                </p>
+              </div>
             </div>
             <div className="flex gap-2">
               <button

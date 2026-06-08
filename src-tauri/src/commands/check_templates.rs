@@ -29,6 +29,7 @@ pub fn create_check_template(
     state: State<'_, AppState>,
     name: String,
     checks: Vec<CheckInput>,
+    pinned: bool,
 ) -> Result<CheckTemplate, String> {
     let now = Utc::now().to_rfc3339();
     let template = CheckTemplate {
@@ -48,7 +49,8 @@ pub fn create_check_template(
             })
             .collect(),
         created_at: now.clone(),
-        updated_at: now,
+        updated_at: now.clone(),
+        pinned,
     };
 
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
@@ -64,6 +66,7 @@ pub fn update_check_template(
     id: String,
     name: Option<String>,
     checks: Option<Vec<CheckInput>>,
+    pinned: Option<bool>,
 ) -> Result<CheckTemplate, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
 
@@ -90,6 +93,9 @@ pub fn update_check_template(
                 attribute_value: c.attribute_value,
             })
             .collect();
+    }
+    if let Some(pinned) = pinned {
+        template.pinned = pinned;
     }
     template.updated_at = Utc::now().to_rfc3339();
 

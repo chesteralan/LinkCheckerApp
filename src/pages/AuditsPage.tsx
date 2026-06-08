@@ -11,7 +11,7 @@ const modes = [
 
 export function AuditsPage() {
   const navigate = useNavigate()
-  const { audits, targetLists, checkTemplates, loading, createAudit } = useStore()
+  const { audits, targetLists, checkTemplates, loading, createAudit, updateAudit } = useStore()
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [targetListId, setTargetListId] = useState('')
@@ -175,15 +175,25 @@ export function AuditsPage() {
       </Modal>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {audits.map((audit) => {
+        {[...audits].sort((a, b) => Number(b.pinned) - Number(a.pinned)).map((audit) => {
           const tl = targetLists.find((t) => t.id === audit.targetListId)
           const ct = checkTemplates.find((c) => c.id === audit.checkTemplateId)
           return (
             <button
               key={audit.id}
               onClick={() => navigate(`/audits/${audit.id}`)}
-              className="text-left border border-border rounded-lg p-4 hover:border-primary transition-colors"
+              className="text-left border border-border rounded-lg p-4 hover:border-primary transition-colors relative"
             >
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  updateAudit(audit.id, { pinned: !audit.pinned })
+                }}
+                className="absolute top-2 right-2 text-sm hover:scale-110 transition-transform"
+                title={audit.pinned ? 'Unpin' : 'Pin'}
+              >
+                {audit.pinned ? '★' : '☆'}
+              </button>
               <h3 className="font-medium">{audit.name}</h3>
               <p className="text-sm text-muted-foreground mt-1">
                 {tl?.name ?? 'Unknown list'} → {ct?.name ?? 'Unknown template'}

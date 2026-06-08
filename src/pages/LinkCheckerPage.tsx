@@ -39,7 +39,6 @@ export function LinkCheckerPage() {
   const passed = results.filter((r) => r.status != null && r.status < 400 && !r.error)
   const broken = results.filter((r) => r.status != null && r.status >= 400)
   const errored = results.filter((r) => r.error)
-  const seed = results.filter((r) => r.depth === 0)
 
   return (
     <div className="space-y-6">

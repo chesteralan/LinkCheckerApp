@@ -4,6 +4,7 @@ export interface TargetList {
   urls: string[]
   createdAt: string
   updatedAt: string
+  pinned: boolean
 }
 
 export type CheckType = 'selector' | 'status' | 'regex' | 'attribute'
@@ -25,6 +26,7 @@ export interface CheckTemplate {
   checks: SelectorCheck[]
   createdAt: string
   updatedAt: string
+  pinned: boolean
 }
 
 export function defaultCheck(): SelectorCheck {
@@ -52,6 +54,7 @@ export interface Audit {
   originOverride?: string
   urlPostfix?: string
   createdAt: string
+  pinned: boolean
 }
 
 export interface SelectorResult {

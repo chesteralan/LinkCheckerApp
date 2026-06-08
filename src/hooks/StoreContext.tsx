@@ -10,12 +10,12 @@ export interface StoreState {
 
 export interface StoreActions {
   createTargetList: (name: string, urls: string[]) => Promise<TargetList>
-  updateTargetList: (id: string, data: { name?: string; urls?: string[] }) => Promise<TargetList>
+  updateTargetList: (id: string, data: { name?: string; urls?: string[]; pinned?: boolean }) => Promise<TargetList>
   deleteTargetList: (id: string) => Promise<void>
   createCheckTemplate: (name: string, checks: SelectorCheck[]) => Promise<CheckTemplate>
   updateCheckTemplate: (
     id: string,
-    data: { name?: string; checks?: SelectorCheck[] },
+    data: { name?: string; checks?: SelectorCheck[]; pinned?: boolean },
   ) => Promise<CheckTemplate>
   patchCheckTemplate: (id: string, data: { name?: string; checks?: SelectorCheck[] }) => void
   deleteCheckTemplate: (id: string) => Promise<void>
@@ -29,7 +29,7 @@ export interface StoreActions {
   ) => Promise<Audit>
   updateAudit: (
     id: string,
-    data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string },
+    data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string; pinned?: boolean },
   ) => Promise<Audit>
   deleteAudit: (id: string) => Promise<void>
   reload: () => Promise<void>

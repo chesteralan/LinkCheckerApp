@@ -12,20 +12,21 @@ export function normalizeUrl(raw: string): string {
 
 // Target Lists
 export const listTargetLists = () => invoke<TargetList[]>('list_target_lists')
-export const createTargetList = (data: { name: string; urls: string[] }) =>
-  invoke<TargetList>('create_target_list', data)
-export const updateTargetList = (data: { id: string; name?: string; urls?: string[] }) =>
+export const createTargetList = (data: { name: string; urls: string[]; pinned?: boolean }) =>
+  invoke<TargetList>('create_target_list', { ...data, pinned: data.pinned ?? false })
+export const updateTargetList = (data: { id: string; name?: string; urls?: string[]; pinned?: boolean }) =>
   invoke<TargetList>('update_target_list', data)
 export const deleteTargetList = (id: string) => invoke<void>('delete_target_list', { id })
 
 // Check Templates
 export const listCheckTemplates = () => invoke<CheckTemplate[]>('list_check_templates')
-export const createCheckTemplate = (data: { name: string; checks: SelectorCheck[] }) =>
-  invoke<CheckTemplate>('create_check_template', data)
+export const createCheckTemplate = (data: { name: string; checks: SelectorCheck[]; pinned?: boolean }) =>
+  invoke<CheckTemplate>('create_check_template', { ...data, pinned: data.pinned ?? false })
 export const updateCheckTemplate = (data: {
   id: string
   name?: string
   checks?: SelectorCheck[]
+  pinned?: boolean
 }) => invoke<CheckTemplate>('update_check_template', data)
 export const deleteCheckTemplate = (id: string) => invoke<void>('delete_check_template', { id })
 
@@ -38,13 +39,15 @@ export const createAudit = (data: {
   config: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string> }
   originOverride?: string
   urlPostfix?: string
-}) => invoke<Audit>('create_audit', data)
+  pinned?: boolean
+}) => invoke<Audit>('create_audit', { ...data, pinned: data.pinned ?? false })
 export const updateAudit = (data: {
   id: string
   name?: string
   config?: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string> }
   originOverride?: string
   urlPostfix?: string
+  pinned?: boolean
 }) => invoke<Audit>('update_audit', data)
 export const deleteAudit = (id: string) => invoke<void>('delete_audit', { id })
 

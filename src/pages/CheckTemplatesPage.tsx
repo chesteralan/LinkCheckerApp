@@ -107,24 +107,33 @@ export function CheckTemplatesPage() {
       )}
 
       <div className="space-y-2">
-        {checkTemplates.map((template) => (
+        {[...checkTemplates].sort((a, b) => Number(b.pinned) - Number(a.pinned)).map((template) => (
           <div key={template.id} className="border border-border rounded-lg p-4 flex items-center justify-between">
-            <div>
+            <div className="flex items-center gap-3">
               <button
-                onClick={() => navigate(`/check-templates/${template.id}`)}
-                className="font-medium text-left hover:text-primary transition-colors"
+                onClick={() => updateCheckTemplate(template.id, { pinned: !template.pinned })}
+                className="text-sm hover:scale-110 transition-transform"
+                title={template.pinned ? 'Unpin' : 'Pin'}
               >
-                {template.name}
+                {template.pinned ? '★' : '☆'}
               </button>
-              <p className="text-sm text-muted-foreground">
-                {template.checks.length} check{template.checks.length !== 1 ? 's' : ''}
-              </p>
-              <div className="flex flex-wrap gap-1 mt-1">
-                {template.checks.map((c) => (
-                  <span key={c.id} className="inline-block px-2 py-0.5 bg-muted text-xs rounded-md" title={`${c.checkType}: ${c.selector}`}>
-                    {c.label}
-                  </span>
-                ))}
+              <div>
+                <button
+                  onClick={() => navigate(`/check-templates/${template.id}`)}
+                  className="font-medium text-left hover:text-primary transition-colors"
+                >
+                  {template.name}
+                </button>
+                <p className="text-sm text-muted-foreground">
+                  {template.checks.length} check{template.checks.length !== 1 ? 's' : ''}
+                </p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {template.checks.map((c) => (
+                    <span key={c.id} className="inline-block px-2 py-0.5 bg-muted text-xs rounded-md" title={`${c.checkType}: ${c.selector}`}>
+                      {c.label}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="flex gap-2 shrink-0">

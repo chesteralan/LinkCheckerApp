@@ -4,6 +4,7 @@ import { useStore } from '@/hooks/useStore'
 import { getRunResults } from '@/lib/tauri'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { VirtualList } from '@/components/VirtualList'
+import { Modal } from '@/components/Modal'
 import type { AuditRun, SelectorCheck, PageResult } from '@/types'
 
 const ITEM_HEIGHT_DETAILED = 100
@@ -12,11 +13,13 @@ const ITEM_HEIGHT_TABLE = 42
 export function RunDetailPage() {
   const { runId } = useParams<{ runId: string }>()
   const navigate = useNavigate()
-  const { audits, targetLists, checkTemplates } = useStore()
+  const { audits, targetLists, checkTemplates, createCheckTemplate } = useStore()
   const [run, setRun] = useState<AuditRun | null>(null)
   const [filter, setFilter] = useState<'all' | 'passed' | 'failed' | 'errored'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [view, setView] = useState<'detailed' | 'table'>('detailed')
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false)
+  const [templateName, setTemplateName] = useState('')
 
   useEffect(() => {
     if (runId) {
@@ -62,6 +65,14 @@ export function RunDetailPage() {
     return true
   })
 
+  async function handleSaveTemplate() {
+    if (!templateName.trim() || selectors.length === 0) return
+    const created = await createCheckTemplate(templateName.trim(), selectors)
+    setShowSaveTemplate(false)
+    setTemplateName('')
+    navigate(`/check-templates/${created.id}`)
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -71,7 +82,19 @@ export function RunDetailPage() {
           </button>
           <h2 className="text-2xl font-bold">{audit?.name ?? 'Quick Audit'}</h2>
         </div>
-        <span
+        <div className="flex items-center gap-2">
+          {selectors.length > 0 && (
+            <button
+              onClick={() => {
+                setTemplateName((audit?.name ?? 'Quick Audit') + ' - Template')
+                setShowSaveTemplate(true)
+              }}
+              className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors"
+            >
+              Save as Template
+            </button>
+          )}
+          <span
           className={`text-xs px-2 py-0.5 rounded-full ${
             run.status === 'completed'
               ? 'bg-success/10 text-success'
@@ -84,6 +107,7 @@ export function RunDetailPage() {
         >
           {run.status}
         </span>
+        </div>
       </div>
 
       <div className="flex items-center justify-between text-sm text-muted-foreground">
@@ -301,6 +325,37 @@ export function RunDetailPage() {
           </table>
         </div>
       )}
+
+      <Modal open={showSaveTemplate} onClose={() => setShowSaveTemplate(false)} title="Save as Check Template">
+        <div className="space-y-4">
+          <input
+            type="text"
+            placeholder="Template name"
+            value={templateName}
+            onChange={(e) => setTemplateName(e.target.value)}
+            autoFocus
+            className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <p className="text-xs text-muted-foreground">
+            Template will include {selectors.length} check{selectors.length !== 1 ? 's' : ''} from this run.
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={handleSaveTemplate}
+              disabled={!templateName.trim()}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              Create Template
+            </button>
+            <button
+              onClick={() => setShowSaveTemplate(false)}
+              className="px-4 py-2 border border-border rounded-md text-sm hover:bg-muted transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
