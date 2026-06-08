@@ -9,9 +9,10 @@ import { ResultsTable } from '@/components/ResultsTable'
 import { LiveSummary } from '@/components/LiveSummary'
 import { writeFile } from '@/lib/tauri'
 import { csvEscape } from '@/utils/csv'
+import { TrendsChart } from '@/components/TrendsChart'
 import type { AuditRun } from '@/types'
 
-type AuditTab = 'overview' | 'results'
+type AuditTab = 'overview' | 'results' | 'trends'
 
 export function AuditDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -197,6 +198,16 @@ export function AuditDetailPage() {
             }`}
           >
             Results{runner.run ? ` (${runner.run.results.length})` : ''}
+          </button>
+          <button
+            onClick={() => setActiveTab('trends')}
+            className={`px-4 py-2 text-sm border-b-2 transition-colors ${
+              activeTab === 'trends'
+                ? 'border-primary text-foreground font-medium'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Trends
           </button>
         </div>
       </div>
@@ -476,6 +487,13 @@ export function AuditDetailPage() {
           {!runner.run && !runner.running && !runner.progress && (
             <p className="text-sm text-muted-foreground">Press "Run Audit" to start checking URLs.</p>
           )}
+        </div>
+      )}
+
+      {activeTab === 'trends' && a && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold">Trends</h3>
+          <TrendsChart auditId={a.id} />
         </div>
       )}
     </div>
