@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
-import { getRunResults } from '@/lib/tauri'
+import { getRunResults, writeFile } from '@/lib/tauri'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { save } from '@tauri-apps/plugin-dialog'
 import { VirtualList } from '@/components/VirtualList'
 import { Modal } from '@/components/Modal'
 import type { AuditRun, SelectorCheck, PageResult } from '@/types'
@@ -20,6 +21,18 @@ export function RunDetailPage() {
   const [view, setView] = useState<'detailed' | 'table'>('detailed')
   const [showSaveTemplate, setShowSaveTemplate] = useState(false)
   const [templateName, setTemplateName] = useState('')
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const exportRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   useEffect(() => {
     if (runId) {
@@ -65,6 +78,27 @@ export function RunDetailPage() {
     return true
   })
 
+  async function handleExport(format: 'json' | 'csv') {
+    setShowExportMenu(false)
+    if (!run) return
+    const ext = format === 'json' ? 'json' : 'csv'
+    const path = await save({ defaultPath: `${audit?.name ?? 'run'}-${runId}.${ext}`, filters: [{ name: format.toUpperCase(), extensions: [ext] }] })
+    if (!path) return
+    const content = format === 'json'
+      ? JSON.stringify(run, null, 2)
+      : [
+          'URL,Page Title,Status,Status Text,Response Time (ms),Error,Check Label,Check Type,Found,Count',
+          ...run.results.flatMap((r) =>
+            r.checks.length > 0
+              ? r.checks.map((c) =>
+                  [r.url, r.pageTitle ?? '', r.status ?? '', r.statusText, r.responseTimeMs ?? '', r.error ?? '', c.label, c.checkType, c.found, c.count].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')
+                )
+              : [[r.url, r.pageTitle ?? '', r.status ?? '', r.statusText, r.responseTimeMs ?? '', r.error ?? '', '', '', '', ''].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')]
+          ).join('\n'),
+        ].join('\n')
+    await writeFile(path, content)
+  }
+
   async function handleSaveTemplate() {
     if (!templateName.trim() || selectors.length === 0) return
     const created = await createCheckTemplate(templateName.trim(), selectors)
@@ -94,6 +128,20 @@ export function RunDetailPage() {
               Save as Template
             </button>
           )}
+          <div className="relative" ref={exportRef}>
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors"
+            >
+              Export
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 top-full mt-1 bg-popover border border-border rounded-md shadow-lg z-50 min-w-[100px]">
+                <button onClick={() => handleExport('json')} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors">JSON</button>
+                <button onClick={() => handleExport('csv')} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors">CSV</button>
+              </div>
+            )}
+          </div>
           <span
           className={`text-xs px-2 py-0.5 rounded-full ${
             run.status === 'completed'
