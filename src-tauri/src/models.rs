@@ -110,6 +110,21 @@ pub struct AppData {
     pub audits: Vec<Audit>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapedSelector {
+    pub selector: String,
+    pub type_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunFileInfo {
+    pub id: String,
+    pub started_at: String,
+    pub timestamp_ms: i64,
+}
+
 impl AppData {
     pub fn empty() -> Self {
         Self {

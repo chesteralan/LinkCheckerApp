@@ -191,38 +191,59 @@ export function AuditDetailPage({ audit, onBack }: Props) {
 
       {activeTab === 'overview' && (
         <div className="space-y-4">
-          <div className="flex gap-2">
-            {editing ? (
-              <>
-                <button
-                  onClick={handleUpdate}
-                  disabled={!editName.trim()}
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-                >
-                  Save
-                </button>
-                <button
-                  onClick={() => setEditing(false)}
-                  className="px-4 py-2 border border-border rounded-md text-sm hover:bg-muted transition-colors"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={startEdit}
-                  className="px-4 py-2 border border-border rounded-md text-sm hover:bg-muted transition-colors"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={handleDelete}
-                  className="px-4 py-2 border border-destructive text-destructive rounded-md text-sm hover:bg-destructive/10 transition-colors"
-                >
-                  Delete
-                </button>
-              </>
+          <div className="flex gap-2 justify-between items-center">
+            <div className="flex gap-2">
+              {editing ? (
+                <>
+                  <button
+                    onClick={handleUpdate}
+                    disabled={!editName.trim()}
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setEditing(false)}
+                    className="px-4 py-2 border border-border rounded-md text-sm hover:bg-muted transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={startEdit}
+                    className="px-4 py-2 border border-border rounded-md text-sm hover:bg-muted transition-colors"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    className="px-4 py-2 border border-destructive text-destructive rounded-md text-sm hover:bg-destructive/10 transition-colors"
+                  >
+                    Delete
+                  </button>
+                </>
+              )}
+            </div>
+            {!editing && (
+              <div>
+                {runner.running ? (
+                  <button
+                    onClick={runner.cancel}
+                    className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
+                  >
+                    Cancel Run
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleRun}
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
+                  >
+                    Run Audit
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -342,23 +363,6 @@ export function AuditDetailPage({ audit, onBack }: Props) {
                       className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
                     />
                   </div>
-                </div>
-                <div className="flex gap-2">
-                  {runner.running ? (
-                    <button
-                      onClick={runner.cancel}
-                      className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
-                    >
-                      Cancel Run
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleRun}
-                      className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
-                    >
-                      Run Audit
-                    </button>
-                  )}
                 </div>
               </div>
             </>

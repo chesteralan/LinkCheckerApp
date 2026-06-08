@@ -47,6 +47,9 @@ export const deleteAudit = (id: string) =>
 export const scrapeLinks = (url: string) =>
   invoke<string[]>('scrape_links', { url })
 
+export const scrapeSelectors = (url: string, options: { selectIds: boolean; selectClasses: boolean; selectTestids: boolean; customSelector: string }) =>
+  invoke<{ selector: string; typeName: string }[]>('scrape_selectors', { url, options })
+
 // File I/O
 export const writeFile = (path: string, content: string) =>
   invoke<void>('write_file', { path, content })
@@ -58,6 +61,7 @@ export const runQuickAudit = (data: { urls: string[]; checks: SelectorCheck[]; c
   invoke<void>('quick_run', data)
 
 export const listAllRuns = () => invoke<AuditRun[]>('list_all_runs')
+export const listRunFiles = () => invoke<{ id: string; startedAt: string; timestampMs: number }[]>('list_run_files')
 export const runAudit = (auditId: string, originOverride?: string, urlPostfix?: string) =>
   invoke<void>('run_audit', { auditId, originOverride, urlPostfix })
 export const cancelRun = () =>
@@ -68,5 +72,7 @@ export const getRunResults = (runId: string) =>
   invoke<AuditRun>('get_run_results', { runId })
 export const getDataPath = () =>
   invoke<string>('get_data_path')
+export const openDataFolder = () =>
+  invoke<void>('open_data_folder')
 export const clearHistory = () =>
   invoke<void>('clear_history')

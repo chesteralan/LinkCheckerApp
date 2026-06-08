@@ -1,21 +1,18 @@
 import { useEffect, useState } from 'react'
-import { useStore } from '@/hooks/useStore'
-import { listAllRuns, clearHistory } from '@/lib/tauri'
-import type { AuditRun } from '@/types'
+import { listRunFiles, clearHistory } from '@/lib/tauri'
 
 interface Props {
   onViewRun: (runId: string) => void
 }
 
 export function RunHistoryPage({ onViewRun }: Props) {
-  const { audits, targetLists, checkTemplates } = useStore()
-  const [runs, setRuns] = useState<AuditRun[]>([])
+  const [files, setFiles] = useState<{ id: string; startedAt: string; timestampMs: number }[]>([])
   const [loading, setLoading] = useState(true)
 
   function load() {
     setLoading(true)
-    listAllRuns()
-      .then(setRuns)
+    listRunFiles()
+      .then(setFiles)
       .finally(() => setLoading(false))
   }
 
@@ -23,14 +20,14 @@ export function RunHistoryPage({ onViewRun }: Props) {
 
   async function handleClear() {
     await clearHistory()
-    setRuns([])
+    setFiles([])
   }
 
   if (loading) {
     return <div className="text-muted-foreground">Loading...</div>
   }
 
-  if (runs.length === 0) {
+  if (files.length === 0) {
     return (
       <div className="space-y-6">
         <h2 className="text-2xl font-bold">Run History</h2>
@@ -38,10 +35,6 @@ export function RunHistoryPage({ onViewRun }: Props) {
       </div>
     )
   }
-
-  const sorted = [...runs].sort(
-    (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
-  )
 
   return (
     <div className="space-y-6">
@@ -55,79 +48,34 @@ export function RunHistoryPage({ onViewRun }: Props) {
         </button>
       </div>
 
-      <div className="space-y-3">
-        {sorted.map((run) => {
-          const audit = audits.find((a) => a.id === run.auditId)
-          const tl = targetLists.find((t) => t.id === audit?.targetListId)
-          const ct = checkTemplates.find((c) => c.id === audit?.checkTemplateId)
-          const date = new Date(run.startedAt).toLocaleString()
-
-          return (
-            <button
-              key={run.id}
-              onClick={() => onViewRun(run.id)}
-              className="w-full text-left border border-border rounded-lg p-4 hover:border-primary transition-colors cursor-pointer"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-medium">{audit ? audit.name : 'Quick Audit'}</h3>
-                  {audit ? (
-                    <p className="text-sm text-muted-foreground">
-                      {tl?.name ?? '?'} → {ct?.name ?? '?'}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Quick Audit</p>
-                  )}
-                </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  run.status === 'completed' ? 'bg-success/10 text-success' :
-                  run.status === 'cancelled' ? 'bg-warning/10 text-warning' :
-                  run.status === 'running' ? 'bg-primary/10 text-primary' :
-                  'bg-destructive/10 text-destructive'
-                }`}>
-                  {run.status}
-                </span>
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-4 text-sm">
-                <span className="text-muted-foreground">{date}</span>
-                <span>{run.results.length} URLs</span>
-                <span className="text-success">✓ {run.summary.passed}</span>
-                <span className="text-destructive">✗ {run.summary.failed}</span>
-                <span className="text-muted-foreground">⚠ {run.summary.errored}</span>
-                {run.summary.avgResponseTimeMs > 0 && (
-                  <span className="text-muted-foreground">
-                    avg {Math.round(run.summary.avgResponseTimeMs)}ms
-                  </span>
-                )}
-              </div>
-
-              {run.results.length > 0 && (
-                <details className="mt-3" onClick={(e) => e.stopPropagation()}>
-                  <summary className="text-sm text-primary cursor-pointer hover:underline">
-                    Show details
-                  </summary>
-                  <div className="mt-2 max-h-60 overflow-y-auto space-y-1">
-                    {run.results.map((r, i) => (
-                      <div key={i} className="flex items-center gap-3 text-sm py-1 px-2 rounded hover:bg-muted/30">
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                          r.error ? 'bg-destructive' :
-                          r.checks.every((c) => c.found) ? 'bg-success' :
-                          'bg-warning'
-                        }`} />
-                        <span className="font-mono text-xs truncate flex-1">{r.url}</span>
-                        {r.status && <span className="text-muted-foreground">{r.status}</span>}
-                        {r.responseTimeMs != null && (
-                          <span className="text-muted-foreground">{r.responseTimeMs}ms</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              )}
-            </button>
-          )
-        })}
+      <div className="border border-border rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-muted/50 text-left">
+              <th className="px-4 py-2 font-medium">Date</th>
+              <th className="px-4 py-2 font-medium">Type</th>
+              <th className="px-4 py-2 font-medium"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {files.map((f) => (
+              <tr key={f.id} className="hover:bg-muted/30">
+                <td className="px-4 py-2.5 text-muted-foreground">
+                  {new Date(f.timestampMs).toLocaleString()}
+                </td>
+                <td className="px-4 py-2.5">Quick Audit</td>
+                <td className="px-4 py-2.5 text-right">
+                  <button
+                    onClick={() => onViewRun(f.id)}
+                    className="text-primary hover:underline text-xs font-medium"
+                  >
+                    View Details
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )

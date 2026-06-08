@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useAuditRunner } from '@/hooks/useAuditRunner'
+import { useStore } from '@/hooks/useStore'
+import { Modal } from '@/components/Modal'
 import { ProgressBar } from '@/components/ProgressBar'
 import { ResultsTable } from '@/components/ResultsTable'
 import { scrapeLinks, normalizeUrl } from '@/lib/tauri'
@@ -40,6 +42,7 @@ function LiveSummary({ results }: { results: PageResult[] }) {
 
 export function QuickAuditPage({ template, onBack }: Props) {
   const runner = useAuditRunner()
+  const { createTargetList, createAudit } = useStore()
   const [urlsText, setUrlsText] = useState('')
   const [showScraper, setShowScraper] = useState(false)
   const [scrapeUrl, setScrapeUrl] = useState('')
@@ -47,6 +50,22 @@ export function QuickAuditPage({ template, onBack }: Props) {
   const [mode, setMode] = useState<'sequential' | 'batch'>('batch')
   const [batchSize, setBatchSize] = useState(5)
   const [timeoutSecs, setTimeoutSecs] = useState(10)
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [saveAuditName, setSaveAuditName] = useState('')
+  const [saveTargetListName, setSaveTargetListName] = useState('')
+
+  async function handleSaveAudit() {
+    const name = saveAuditName.trim()
+    const tlName = saveTargetListName.trim() || name
+    if (!name) return
+    const urls = urlsText.split('\n').map((u) => u.trim()).filter(Boolean)
+    if (urls.length === 0) return
+    const tl = await createTargetList(tlName, urls)
+    await createAudit(name, tl.id, template.id, { mode, batchSize, timeoutSecs })
+    setShowSaveModal(false)
+    setSaveAuditName('')
+    setSaveTargetListName('')
+  }
 
   async function handleRun() {
     const urls = urlsText.split('\n').map((u) => normalizeUrl(u)).filter(Boolean)
@@ -183,13 +202,22 @@ export function QuickAuditPage({ template, onBack }: Props) {
             Cancel Run
           </button>
         ) : (
-          <button
-            onClick={handleRunCb}
-            disabled={!urlsText.trim()}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            Run Audit
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleRunCb}
+              disabled={!urlsText.trim()}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              Run Audit
+            </button>
+            <button
+              onClick={() => setShowSaveModal(true)}
+              disabled={!urlsText.trim()}
+              className="px-4 py-2 border border-border rounded-md text-sm font-medium hover:bg-muted transition-opacity disabled:opacity-50"
+            >
+              Save to Audits
+            </button>
+          </div>
         )}
       </div>
 
@@ -207,6 +235,47 @@ export function QuickAuditPage({ template, onBack }: Props) {
       {!runner.run && !runner.running && !runner.progress && urlsText.trim() && (
         <p className="text-sm text-muted-foreground">Press "Run Audit" to start checking URLs.</p>
       )}
+
+      <Modal title="Save to Audits" open={showSaveModal} onClose={() => setShowSaveModal(false)}>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium block mb-1">Audit Name</label>
+              <input
+                type="text"
+                value={saveAuditName}
+                onChange={(e) => setSaveAuditName(e.target.value)}
+                className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="e.g. Login Page Check"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">Target List Name</label>
+              <input
+                type="text"
+                value={saveTargetListName}
+                onChange={(e) => setSaveTargetListName(e.target.value)}
+                className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="Defaults to audit name"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="px-4 py-2 text-sm border border-border rounded-md hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveAudit}
+                disabled={!saveAuditName.trim()}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                Create Audit
+              </button>
+            </div>
+          </div>
+        </Modal>
     </div>
   )
 }

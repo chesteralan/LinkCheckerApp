@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use serde::Deserialize;
 use tauri::{AppHandle, State};
@@ -40,6 +41,83 @@ pub async fn scrape_links(url: String) -> Result<Vec<String>, String> {
     links.dedup();
 
     Ok(links)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeSelectorsOptions {
+    pub select_ids: bool,
+    pub select_classes: bool,
+    pub select_testids: bool,
+    pub custom_selector: String,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn scrape_selectors(url: String, options: ScrapeSelectorsOptions) -> Result<Vec<ScrapedSelector>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let html = client.get(&url).send().await
+        .map_err(|e| format!("Failed to fetch URL: {}", e))?
+        .text().await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    let document = scraper::Html::parse_document(&html);
+    let mut results = BTreeSet::new();
+
+    if options.select_ids {
+        if let Ok(sel) = scraper::Selector::parse("[id]") {
+            for el in document.select(&sel) {
+                if let Some(id) = el.value().attr("id").filter(|v| !v.is_empty()) {
+                    results.insert(format!("#{}", id));
+                }
+            }
+        }
+    }
+
+    if options.select_classes {
+        if let Ok(sel) = scraper::Selector::parse("[class]") {
+            let mut seen = BTreeSet::new();
+            for el in document.select(&sel) {
+                if let Some(class_str) = el.value().attr("class") {
+                    for cls in class_str.split_whitespace() {
+                        if !cls.is_empty() && seen.insert(cls.to_string()) {
+                            results.insert(format!(".{}", cls));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if options.select_testids {
+        if let Ok(sel) = scraper::Selector::parse("[data-testid]") {
+            for el in document.select(&sel) {
+                if let Some(tid) = el.value().attr("data-testid").filter(|v| !v.is_empty()) {
+                    results.insert(format!("[data-testid=\"{}\"]", tid));
+                }
+            }
+        }
+    }
+
+    if !options.custom_selector.is_empty() {
+        if let Ok(sel) = scraper::Selector::parse(&options.custom_selector) {
+            if document.select(&sel).next().is_some() {
+                results.insert(options.custom_selector.clone());
+            }
+        }
+    }
+
+    Ok(results.into_iter().map(|s| ScrapedSelector {
+        selector: s.clone(),
+        type_name: if s.starts_with('#') { "id".into() }
+            else if s.starts_with('.') { "class".into() }
+            else if s.contains("data-testid") { "data-testid".into() }
+            else { "custom".into() },
+    }).collect())
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -85,9 +163,7 @@ pub async fn quick_run(
 
     let run = state.checker.run(&app, &audit, &target_list, &check_template).await;
 
-    let mut history = state.history.lock().map_err(|e| e.to_string())?;
-    history.push(run);
-    state.storage.save_history(&history)?;
+    state.storage.save_run(&run)?;
 
     Ok(())
 }
@@ -140,9 +216,7 @@ pub async fn run_audit(
 
     let run = state.checker.run(&app, &audit, &target_list, &check_template).await;
 
-    let mut history = state.history.lock().map_err(|e| e.to_string())?;
-    history.push(run);
-    state.storage.save_history(&history)?;
+    state.storage.save_run(&run)?;
 
     Ok(())
 }
@@ -164,37 +238,46 @@ pub fn read_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn list_run_files(state: State<'_, AppState>) -> Result<Vec<RunFileInfo>, String> {
+    Ok(state.storage.list_run_files())
+}
+
+#[tauri::command]
 pub fn list_all_runs(state: State<'_, AppState>) -> Result<Vec<AuditRun>, String> {
-    let history = state.history.lock().map_err(|e| e.to_string())?;
-    Ok(history.clone())
+    let runs = state.storage.load_all_runs();
+    Ok(runs)
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn list_audit_runs(state: State<'_, AppState>, audit_id: String) -> Result<Vec<AuditRun>, String> {
-    let history = state.history.lock().map_err(|e| e.to_string())?;
-    Ok(history.iter().filter(|r| r.audit_id == audit_id).cloned().collect())
+    let runs = state.storage.load_all_runs();
+    Ok(runs.into_iter().filter(|r| r.audit_id == audit_id).collect())
 }
 
 #[tauri::command]
 pub fn get_data_path(state: State<'_, AppState>) -> Result<String, String> {
-    let path = state.storage.data_path();
+    let path = state.storage.app_dir();
     Ok(path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
+pub fn open_data_folder(state: State<'_, AppState>) -> Result<(), String> {
+    let path = state.storage.app_dir();
+    let path_str = path.to_string_lossy();
+    std::process::Command::new("open")
+        .arg(path_str.as_ref())
+        .spawn()
+        .map_err(|e| format!("Failed to open folder: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_run_results(state: State<'_, AppState>, run_id: String) -> Result<AuditRun, String> {
-    let history = state.history.lock().map_err(|e| e.to_string())?;
-    history
-        .iter()
-        .find(|r| r.id == run_id)
-        .cloned()
-        .ok_or_else(|| "Run not found".to_string())
+    state.storage.load_run(&run_id)
 }
 
 #[tauri::command]
 pub fn clear_history(state: State<'_, AppState>) -> Result<(), String> {
-    let mut history = state.history.lock().map_err(|e| e.to_string())?;
-    history.clear();
-    state.storage.clear_history()?;
+    state.storage.clear_all_runs()?;
     Ok(())
 }

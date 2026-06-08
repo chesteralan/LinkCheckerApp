@@ -7,12 +7,11 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 use checker::Checker;
-use models::{AppData, AuditRun};
+use models::AppData;
 use storage::Storage;
 
 pub struct AppState {
     pub data: Mutex<AppData>,
-    pub history: Mutex<Vec<AuditRun>>,
     pub storage: Storage,
     pub checker: Checker,
 }
@@ -40,12 +39,11 @@ pub fn run() {
             std::fs::create_dir_all(&app_dir).ok();
 
             let storage = Storage::new(app_dir);
+            storage.migrate_old_history().ok();
             let data = storage.load();
-            let history = storage.load_history();
 
             app.manage(AppState {
                 data: Mutex::new(data),
-                history: Mutex::new(history),
                 storage,
                 checker: Checker::new(),
             });
@@ -70,11 +68,14 @@ pub fn run() {
             commands::runs::write_file,
             commands::runs::read_file,
             commands::runs::list_all_runs,
+            commands::runs::list_run_files,
             commands::runs::list_audit_runs,
             commands::runs::get_run_results,
             commands::runs::scrape_links,
+            commands::runs::scrape_selectors,
             commands::runs::quick_run,
             commands::runs::get_data_path,
+            commands::runs::open_data_folder,
             commands::runs::clear_history,
         ])
         .run(tauri::generate_context!())
