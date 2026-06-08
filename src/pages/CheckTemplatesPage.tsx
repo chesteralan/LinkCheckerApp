@@ -14,6 +14,7 @@ export function CheckTemplatesPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingRename, setEditingRename] = useState<{ id: string; name: string } | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   function resetForm() {
     setName('')
@@ -76,6 +77,36 @@ export function CheckTemplatesPage() {
         </button>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-md text-sm">
+          <span className="text-muted-foreground">{selectedIds.size} selected</span>
+          <button
+            onClick={async () => {
+              for (const id of selectedIds) await deleteCheckTemplate(id)
+              setSelectedIds(new Set())
+            }}
+            className="ml-auto px-3 py-1 text-xs border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
+          >
+            Delete Selected
+          </button>
+          <button
+            onClick={async () => {
+              for (const id of selectedIds) {
+                const t = checkTemplates.find((ct) => ct.id === id)
+                if (t) await createCheckTemplate(t.name + ' (copy)', t.checks)
+              }
+              setSelectedIds(new Set())
+            }}
+            className="px-3 py-1 text-xs border border-border rounded-md hover:bg-muted transition-colors"
+          >
+            Duplicate Selected
+          </button>
+          <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1 text-xs border border-border rounded-md hover:bg-muted transition-colors">
+            Clear
+          </button>
+        </div>
+      )}
+
       <Modal open={showForm} onClose={resetForm} title={editingRename ? 'Rename Template' : 'New Check Template'}>
         <div className="space-y-4">
           <input
@@ -112,6 +143,17 @@ export function CheckTemplatesPage() {
         {[...checkTemplates].sort((a, b) => Number(b.pinned) - Number(a.pinned)).map((template) => (
           <div key={template.id} className="border border-border rounded-lg p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(template.id)}
+                onChange={() => {
+                  const next = new Set(selectedIds)
+                  if (next.has(template.id)) next.delete(template.id)
+                  else next.add(template.id)
+                  setSelectedIds(next)
+                }}
+                className="accent-primary"
+              />
               <button
                 onClick={() => updateCheckTemplate(template.id, { pinned: !template.pinned })}
                 className="text-sm hover:scale-110 transition-transform"

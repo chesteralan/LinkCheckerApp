@@ -24,6 +24,7 @@ export function TargetListsPage() {
   const [scraping, setScraping] = useState(false)
   const [auditModalList, setAuditModalList] = useState<TargetList | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<TargetList | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const urlLines = urlsText.split('\n').map((u) => u.trim()).filter(Boolean)
   const invalidUrls = urlLines.filter((u) => u && !/^https?:\/\/[^\s]+/.test(u))
@@ -97,6 +98,39 @@ export function TargetListsPage() {
           + New List
         </button>
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-md text-sm">
+          <span className="text-muted-foreground">{selectedIds.size} selected</span>
+          <button
+            onClick={async () => {
+              for (const id of selectedIds) await deleteTargetList(id)
+              setSelectedIds(new Set())
+            }}
+            className="ml-auto px-3 py-1 text-xs border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
+          >
+            Delete Selected
+          </button>
+          <button
+            onClick={async () => {
+              const selected = targetLists.filter((l) => selectedIds.has(l.id))
+              const { writeFile } = await import('@/lib/tauri')
+              const { save } = await import('@tauri-apps/plugin-dialog')
+              const path = await save({ defaultPath: 'exported-urls.txt', filters: [{ name: 'Text', extensions: ['txt'] }] })
+              if (!path) return
+              const content = selected.flatMap((l) => l.urls).join('\n')
+              await writeFile(path, content)
+              setSelectedIds(new Set())
+            }}
+            className="px-3 py-1 text-xs border border-border rounded-md hover:bg-muted transition-colors"
+          >
+            Export URLs
+          </button>
+          <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1 text-xs border border-border rounded-md hover:bg-muted transition-colors">
+            Clear
+          </button>
+        </div>
+      )}
 
       <Modal open={showForm} onClose={resetForm} title={editing ? 'Edit Target List' : 'New Target List'}>
         <div className="space-y-4">
@@ -227,6 +261,17 @@ export function TargetListsPage() {
         {[...targetLists].sort((a, b) => Number(b.pinned) - Number(a.pinned)).map((list) => (
           <div key={list.id} className="border border-border rounded-lg p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(list.id)}
+                onChange={() => {
+                  const next = new Set(selectedIds)
+                  if (next.has(list.id)) next.delete(list.id)
+                  else next.add(list.id)
+                  setSelectedIds(next)
+                }}
+                className="accent-primary"
+              />
               <button
                 onClick={() => updateTargetList(list.id, { pinned: !list.pinned })}
                 className="text-sm hover:scale-110 transition-transform"
