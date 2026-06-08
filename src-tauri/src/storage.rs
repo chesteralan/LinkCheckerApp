@@ -40,7 +40,7 @@ fn format_datetime_for_filename(s: &str) -> String {
     } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.fZ") {
         dt.format("%Y-%m-%d_%H-%M-%S").to_string()
     } else {
-        s.replace(':', "-").replace('.', "-").replace('Z', "")
+        s.replace([':', '.'], "-").replace('Z', "")
     }
 }
 
@@ -82,7 +82,7 @@ impl Storage {
     }
 
     pub fn save_run(&self, run: &AuditRun) -> Result<(), String> {
-        std::fs::create_dir_all(&self.history_dir()).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(self.history_dir()).map_err(|e| e.to_string())?;
         let path = self.run_filepath(run);
         let content = serde_json::to_string_pretty(run).map_err(|e| e.to_string())?;
         std::fs::write(&path, content).map_err(|e| e.to_string())
