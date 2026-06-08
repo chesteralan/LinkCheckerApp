@@ -81,3 +81,12 @@ export const openDataFolder = () => invoke<void>('open_data_folder')
 export const clearHistory = () => invoke<void>('clear_history')
 export const pruneHistory = () => invoke<void>('prune_history')
 export const setHistoryRetention = (days: number) => invoke<void>('set_history_retention', { days })
+
+export const checkLinks = (
+  url: string,
+  options: { maxDepth: number; timeoutSecs: number; sameOriginOnly: boolean },
+) =>
+  invoke<{ url: string; sourceUrl: string; status: number | null; statusText: string; error: string | null; depth: number }[]>(
+    'check_links',
+    { url, options },
+  )

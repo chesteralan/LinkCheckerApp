@@ -153,6 +153,17 @@ pub struct RunFileInfo {
     pub timestamp_ms: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkCheckResult {
+    pub url: String,
+    pub source_url: String,
+    pub status: Option<u16>,
+    pub status_text: String,
+    pub error: Option<String>,
+    pub depth: u32,
+}
+
 impl AppData {
     pub fn empty() -> Self {
         Self {

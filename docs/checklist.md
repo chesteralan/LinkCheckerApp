@@ -67,7 +67,7 @@
 ## Phase 9 — Check Capabilities ⬜
 - [x] **Regex / text content checks** — Assert that a page contains or excludes a regex pattern (not just CSS selectors)
 - [x] **Attribute checks** — Verify an element has a specific attribute or attribute value (e.g., `href`, `alt`)
-- [ ] **Broken link crawling** — Follow all `<a href>` on a page and report 4xx/5xx (recursive depth limit)
+- [x] **Broken link crawling** — Follow all `<a href>` on a page and report 4xx/5xx (recursive depth limit)
 - [x] **Page status checks** — Assert expected HTTP status code or range (e.g., must be 2xx)
 - [x] **Custom HTTP headers** — Per-audit request headers (e.g., `Authorization`, `Accept-Language`)
 - [ ] **Cookie / session support** — Set cookies or run a login flow before executing checks

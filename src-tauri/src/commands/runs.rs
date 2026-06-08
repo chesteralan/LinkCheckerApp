@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::collections::BTreeSet;
+use std::collections::{HashMap, BTreeSet, HashSet};
 use std::fs;
 use std::sync::Arc;
 use serde::Deserialize;
@@ -336,4 +335,193 @@ pub fn set_history_retention(state: State<'_, AppState>, days: u32) -> Result<()
     data.max_history_days = days;
     state.storage.save(&data)?;
     Ok(())
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckLinksOptions {
+    #[serde(default = "default_max_depth")]
+    pub max_depth: u32,
+    #[serde(default = "default_check_timeout")]
+    pub timeout_secs: u64,
+    #[serde(default = "default_same_origin_only")]
+    pub same_origin_only: bool,
+}
+
+fn default_max_depth() -> u32 { 1 }
+fn default_check_timeout() -> u64 { 10 }
+fn default_same_origin_only() -> bool { true }
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn check_links(url: String, options: CheckLinksOptions) -> Result<Vec<LinkCheckResult>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(options.timeout_secs))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let parsed = reqwest::Url::parse(&url).map_err(|_| "Invalid URL".to_string())?;
+    let origin = if options.same_origin_only { Some(parsed.origin()) } else { None };
+    let max_depth = options.max_depth;
+    let semaphore = Arc::new(Semaphore::new(10));
+    let results = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let visited = Arc::new(std::sync::Mutex::new(HashSet::new()));
+
+    // Phase 1: fetch the seed page
+    let seed_result = fetch_and_check(&client, &url).await;
+    results.lock().unwrap().push(seed_result);
+
+    if max_depth == 0 {
+        return Ok(results.lock().unwrap().clone());
+    }
+
+    // Phase 2: extract links from seed and check them
+    let links = extract_links(&client, &url).await.unwrap_or_default();
+    let mut handles = Vec::new();
+
+    for link in &links {
+        let should_recurse = origin.as_ref().map_or(true, |o| {
+            reqwest::Url::parse(link).map(|u| u.origin() == *o).unwrap_or(false)
+        });
+        if !should_recurse {
+            continue;
+        }
+        {
+            let mut v = visited.lock().unwrap();
+            if !v.insert(link.clone()) {
+                continue;
+            }
+        }
+
+        let client = client.clone();
+        let results = results.clone();
+        let sem = semaphore.clone();
+        let visited = visited.clone();
+        let origin = origin.clone();
+        let link = link.clone();
+        let source = url.clone();
+
+        let permit = sem.acquire_owned().await.map_err(|e| e.to_string())?;
+        handles.push(tokio::spawn(async move {
+            let _permit = permit;
+            let result = check_single_link(&client, &link).await;
+            results.lock().unwrap().push(LinkCheckResult {
+                url: link.clone(),
+                source_url: source,
+                status: result.status,
+                status_text: result.status_text,
+                error: result.error,
+                depth: 1,
+            });
+
+            if max_depth <= 1 || result.status.map(|s| s >= 400).unwrap_or(true) {
+                return;
+            }
+
+            let sub_links = match extract_links(&client, &link).await {
+                Ok(l) => l,
+                Err(_) => return,
+            };
+            for sub in sub_links {
+                let sub_match = origin.as_ref().map_or(true, |o| {
+                    reqwest::Url::parse(&sub).map(|u| u.origin() == *o).unwrap_or(false)
+                });
+                if !sub_match { continue; }
+                {
+                    let mut v = visited.lock().unwrap();
+                    if !v.insert(sub.clone()) { continue; }
+                }
+                let sub_result = check_single_link(&client, &sub).await;
+                results.lock().unwrap().push(LinkCheckResult {
+                    url: sub,
+                    source_url: link.clone(),
+                    status: sub_result.status,
+                    status_text: sub_result.status_text,
+                    error: sub_result.error,
+                    depth: 2,
+                });
+            }
+        }));
+    }
+
+    for h in handles {
+        let _ = h.await;
+    }
+
+    let final_results = results.lock().unwrap().clone();
+    Ok(final_results)
+}
+
+async fn fetch_and_check(client: &reqwest::Client, url: &str) -> LinkCheckResult {
+    match client.get(url).send().await {
+        Ok(resp) => LinkCheckResult {
+            url: url.to_string(),
+            source_url: url.to_string(),
+            status: Some(resp.status().as_u16()),
+            status_text: resp.status().canonical_reason().unwrap_or("unknown").to_string(),
+            error: None,
+            depth: 0,
+        },
+        Err(e) => LinkCheckResult {
+            url: url.to_string(),
+            source_url: url.to_string(),
+            status: None,
+            status_text: "error".into(),
+            error: Some(e.to_string()),
+            depth: 0,
+        },
+    }
+}
+
+async fn check_single_link(client: &reqwest::Client, url: &str) -> LinkCheckResult {
+    match client.head(url).send().await {
+        Ok(resp) => LinkCheckResult {
+            url: url.to_string(),
+            source_url: String::new(),
+            status: Some(resp.status().as_u16()),
+            status_text: resp.status().canonical_reason().unwrap_or("unknown").to_string(),
+            error: None,
+            depth: 1,
+        },
+        Err(e) => LinkCheckResult {
+            url: url.to_string(),
+            source_url: String::new(),
+            status: None,
+            status_text: "error".into(),
+            error: Some(e.to_string()),
+            depth: 1,
+        },
+    }
+}
+
+async fn extract_links(client: &reqwest::Client, url: &str) -> Result<Vec<String>, String> {
+    let html = client.get(url).send().await
+        .map_err(|e| format!("{}", e))?
+        .text().await
+        .map_err(|e| format!("{}", e))?;
+
+    let document = scraper::Html::parse_document(&html);
+    let selector = scraper::Selector::parse("a[href]").unwrap();
+    let mut links = Vec::new();
+
+    for el in document.select(&selector) {
+        if let Some(href) = el.value().attr("href") {
+            let href = href.trim();
+            if href.is_empty() || href.starts_with('#') || href.starts_with("javascript:") || href.starts_with("mailto:") {
+                continue;
+            }
+            if let Ok(base) = reqwest::Url::parse(url) {
+                if let Ok(resolved) = base.join(href) {
+                    let s = resolved.as_str().to_string();
+                    if s.starts_with("http") {
+                        links.push(s);
+                    }
+                }
+            }
+        }
+    }
+
+    links.sort();
+    links.dedup();
+    Ok(links)
 }

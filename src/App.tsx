@@ -12,6 +12,7 @@ import { RunHistoryPage } from '@/pages/RunHistoryPage'
 import { RunDetailPage } from '@/pages/RunDetailPage'
 import { RunDiffPage } from '@/pages/RunDiffPage'
 import { QuickAuditPage } from '@/pages/QuickAuditPage'
+import { LinkCheckerPage } from '@/pages/LinkCheckerPage'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useRun } from '@/hooks/useRun'
 import { useTheme } from '@/hooks/ThemeContext'
@@ -25,6 +26,7 @@ const SHORTCUTS = [
   { key: '2', action: 'Navigate to Target Lists' },
   { key: '3', action: 'Navigate to Audits' },
   { key: '4', action: 'Navigate to Run History' },
+  { key: '5', action: 'Navigate to Link Checker' },
   { key: 'Escape', action: 'Close modal / Cancel' },
   { key: 'Cmd+Enter', action: 'Submit form' },
   { key: '?', action: 'Toggle this shortcut reference' },
@@ -129,6 +131,7 @@ function App() {
               <Route path="/history" element={<RunHistoryPage />} />
               <Route path="/history/:runId" element={<RunDetailPage />} />
               <Route path="/history/diff/:runIdA/:runIdB" element={<RunDiffPage />} />
+              <Route path="/link-checker" element={<LinkCheckerPage />} />
             </Routes>
           </ErrorBoundary>
         </main>

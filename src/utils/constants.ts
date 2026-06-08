@@ -14,6 +14,7 @@ export const NAV_ITEMS = [
   { to: '/target-lists', label: 'Target Lists' },
   { to: '/audits', label: 'Audits' },
   { to: '/history', label: 'Run History' },
+  { to: '/link-checker', label: 'Link Checker' },
 ] as const
 
 export const HOTKEY_NAV: Record<string, string> = {
@@ -21,4 +22,5 @@ export const HOTKEY_NAV: Record<string, string> = {
   '2': '/target-lists',
   '3': '/audits',
   '4': '/history',
+  '5': '/link-checker',
 }
