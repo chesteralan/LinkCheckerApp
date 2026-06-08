@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { save } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
-import { useAuditRunner } from '@/hooks/useAuditRunner'
+import { useRun } from '@/hooks/useRun'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { ProgressBar } from '@/components/ProgressBar'
 import { ResultsTable } from '@/components/ResultsTable'
@@ -17,7 +17,7 @@ export function AuditDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { audits, targetLists, checkTemplates, updateAudit, deleteAudit } = useStore()
-  const runner = useAuditRunner()
+  const runner = useRun()
 
   const audit = audits.find((a) => a.id === id)
 

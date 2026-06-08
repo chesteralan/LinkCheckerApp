@@ -11,6 +11,7 @@ import { RunHistoryPage } from '@/pages/RunHistoryPage'
 import { RunDetailPage } from '@/pages/RunDetailPage'
 import { QuickAuditPage } from '@/pages/QuickAuditPage'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { useRun } from '@/hooks/useRun'
 import { getDataPath, openDataFolder } from '@/lib/tauri'
 import { HOTKEY_NAV } from '@/utils/constants'
 
@@ -19,6 +20,7 @@ declare const __APP_VERSION__: string
 function App() {
   const navigate = useNavigate()
   const [dataPath, setDataPath] = useState('')
+  const { running, run, progress, cancel } = useRun()
 
   useEffect(() => {
     getDataPath()
@@ -37,7 +39,39 @@ function App() {
             v{__APP_VERSION__}
           </span>
         </h1>
-        <span className="text-xs text-muted-foreground">1-4 to navigate</span>
+        {running ? (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                if (run?.auditId) navigate(`/audits/${run.auditId}`)
+              }}
+              disabled={!run?.auditId}
+              className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:pointer-events-none"
+              title={run?.auditId ? 'View running audit' : undefined}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              <span>
+                Running{progress ? `: ${progress.checked}/${progress.total} checked` : '...'}
+              </span>
+              <span className="w-20 h-1.5 bg-muted rounded-full overflow-hidden inline-block">
+                {progress && (
+                  <span
+                    className="block h-full bg-primary rounded-full transition-all"
+                    style={{ width: `${(progress.checked / progress.total) * 100}%` }}
+                  />
+                )}
+              </span>
+            </button>
+            <button
+              onClick={cancel}
+              className="text-xs px-2 py-0.5 bg-destructive text-destructive-foreground rounded font-medium hover:opacity-90 transition-opacity"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">1-4 to navigate</span>
+        )}
       </header>
       <div className="flex flex-1 min-h-0">
         <Sidebar />

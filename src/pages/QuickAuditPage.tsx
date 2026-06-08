@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useAuditRunner } from '@/hooks/useAuditRunner'
 import { useStore } from '@/hooks/useStore'
+import { useRun } from '@/hooks/useRun'
 import { Modal } from '@/components/Modal'
 import { ProgressBar } from '@/components/ProgressBar'
 import { ResultsTable } from '@/components/ResultsTable'
@@ -13,7 +13,7 @@ export function QuickAuditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { checkTemplates, createTargetList, createAudit } = useStore()
-  const runner = useAuditRunner()
+  const runner = useRun()
   const [urlsText, setUrlsText] = useState('')
   const [showScraper, setShowScraper] = useState(false)
   const [scrapeUrl, setScrapeUrl] = useState('')
