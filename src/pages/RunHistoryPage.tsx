@@ -1,22 +1,17 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { listRunFiles, clearHistory } from '@/lib/tauri'
 
-interface Props {
-  onViewRun: (runId: string) => void
-}
-
-export function RunHistoryPage({ onViewRun }: Props) {
+export function RunHistoryPage() {
+  const navigate = useNavigate()
   const [files, setFiles] = useState<{ id: string; startedAt: string; timestampMs: number }[]>([])
   const [loading, setLoading] = useState(true)
 
-  function load() {
-    setLoading(true)
+  useEffect(() => {
     listRunFiles()
       .then(setFiles)
       .finally(() => setLoading(false))
-  }
-
-  useEffect(load, [])
+  }, [])
 
   async function handleClear() {
     await clearHistory()
@@ -60,13 +55,11 @@ export function RunHistoryPage({ onViewRun }: Props) {
           <tbody className="divide-y divide-border">
             {files.map((f) => (
               <tr key={f.id} className="hover:bg-muted/30">
-                <td className="px-4 py-2.5 text-muted-foreground">
-                  {new Date(f.timestampMs).toLocaleString()}
-                </td>
+                <td className="px-4 py-2.5 text-muted-foreground">{new Date(f.timestampMs).toLocaleString()}</td>
                 <td className="px-4 py-2.5">Quick Audit</td>
                 <td className="px-4 py-2.5 text-right">
                   <button
-                    onClick={() => onViewRun(f.id)}
+                    onClick={() => navigate(`/history/${f.id}`)}
                     className="text-primary hover:underline text-xs font-medium"
                   >
                     View Details

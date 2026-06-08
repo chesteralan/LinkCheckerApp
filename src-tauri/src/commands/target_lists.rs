@@ -5,6 +5,41 @@ use uuid::Uuid;
 use crate::models::TargetList;
 use crate::AppState;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_url_already_https() {
+        assert_eq!(normalize_url("https://example.com"), "https://example.com");
+    }
+
+    #[test]
+    fn test_normalize_url_already_http() {
+        assert_eq!(normalize_url("http://example.com"), "http://example.com");
+    }
+
+    #[test]
+    fn test_normalize_url_adds_https() {
+        assert_eq!(normalize_url("example.com"), "https://example.com");
+    }
+
+    #[test]
+    fn test_normalize_url_trimmed() {
+        assert_eq!(normalize_url("  example.com  "), "https://example.com");
+    }
+
+    #[test]
+    fn test_normalize_url_empty() {
+        assert_eq!(normalize_url(""), "");
+    }
+
+    #[test]
+    fn test_normalize_url_whitespace() {
+        assert_eq!(normalize_url("   "), "");
+    }
+}
+
 fn normalize_url(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {

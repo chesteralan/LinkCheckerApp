@@ -1,18 +1,15 @@
 import { useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { Modal } from '@/components/Modal'
 import { scrapeSelectors } from '@/lib/tauri'
-import type { CheckTemplate } from '@/types'
 
-interface Props {
-  template: CheckTemplate
-  onBack: () => void
-}
-
-export function CheckTemplateDetailPage({ template, onBack }: Props) {
+export function CheckTemplateDetailPage() {
+  const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const { checkTemplates, patchCheckTemplate } = useStore()
-  const live = checkTemplates.find((ct) => ct.id === template.id) ?? template
-  const checks = live.checks
+  const template = checkTemplates.find((ct) => ct.id === id)
+  const checks = template?.checks ?? []
 
   const [showScanModal, setShowScanModal] = useState(false)
   const [scanUrl, setScanUrl] = useState('')
@@ -23,8 +20,13 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
   const [scanning, setScanning] = useState(false)
   const [scanResults, setScanResults] = useState<{ selector: string; typeName: string }[]>([])
 
+  if (!template) {
+    return <div className="text-muted-foreground">Template not found.</div>
+  }
+  const t = template
+
   function persist(updated: { selector: string; label: string }[]) {
-    patchCheckTemplate(template.id, { checks: updated })
+    patchCheckTemplate(t.id, { checks: updated })
   }
 
   function moveUp(index: number) {
@@ -83,159 +85,166 @@ export function CheckTemplateDetailPage({ template, onBack }: Props) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="text-sm text-primary hover:underline">&larr; Templates</button>
-          <h2 className="text-2xl font-bold">{live.name}</h2>
+          <button onClick={() => navigate('/check-templates')} className="text-sm text-primary hover:underline">
+            &larr; Templates
+          </button>
+          <h2 className="text-2xl font-bold">{t.name}</h2>
         </div>
         <button
           onClick={() => setShowScanModal(true)}
-          className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
         >
-          Scan URL
+          Scan Selectors
         </button>
       </div>
 
-      <div className="border border-border rounded-lg p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium">Selectors</label>
-          <button
-            onClick={addCheck}
-            className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
-          >
-            + Add Selector
-          </button>
-        </div>
-
+      <div className="space-y-2">
         {checks.length === 0 && (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            No selectors yet. Add one to define what to check on each page.
-          </p>
+          <p className="text-muted-foreground text-sm">No selectors yet. Add one or scan a page.</p>
         )}
-
-        <div className="space-y-2">
-          {checks.map((check, i) => (
-            <div key={check.id ?? i} className="flex items-center gap-2 p-3 border border-border rounded-lg">
-              <div className="flex flex-col shrink-0">
+        {checks.map((check, index) => (
+          <div key={index} className="border border-border rounded-lg p-4">
+            <div className="grid grid-cols-[1fr_1fr_auto] gap-3 items-start">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Label</label>
+                <input
+                  type="text"
+                  value={check.label}
+                  onChange={(e) => updateCheck(index, 'label', e.target.value)}
+                  placeholder="e.g. Logo"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">CSS Selector</label>
+                <input
+                  type="text"
+                  value={check.selector}
+                  onChange={(e) => updateCheck(index, 'selector', e.target.value)}
+                  placeholder="e.g. .logo img"
+                  className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="flex gap-1 pt-5">
                 <button
-                  onClick={() => moveUp(i)}
-                  disabled={i === 0}
-                  className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-default"
+                  onClick={() => moveUp(index)}
+                  disabled={index === 0}
+                  className="px-2 py-1.5 text-xs border border-border rounded hover:bg-muted disabled:opacity-30 transition-colors"
                   title="Move up"
-                >▲</button>
+                >
+                  ↑
+                </button>
                 <button
-                  onClick={() => moveDown(i)}
-                  disabled={i === checks.length - 1}
-                  className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-default"
+                  onClick={() => moveDown(index)}
+                  disabled={index === checks.length - 1}
+                  className="px-2 py-1.5 text-xs border border-border rounded hover:bg-muted disabled:opacity-30 transition-colors"
                   title="Move down"
-                >▼</button>
+                >
+                  ↓
+                </button>
+                <button
+                  onClick={() => removeCheck(index)}
+                  className="px-2 py-1.5 text-xs border border-destructive text-destructive rounded hover:bg-destructive/10 transition-colors"
+                  title="Remove"
+                >
+                  ✕
+                </button>
               </div>
-              <div className="flex-1 grid grid-cols-[1fr_1fr] gap-2">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-0.5 block">CSS Selector</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. .login-form"
-                    value={check.selector}
-                    onChange={(e) => updateCheck(i, 'selector', e.target.value)}
-                    className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-0.5 block">Label</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Login form exists"
-                    value={check.label}
-                    onChange={(e) => updateCheck(i, 'label', e.target.value)}
-                    className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-              </div>
-              <button
-                onClick={() => removeCheck(i)}
-                className="p-2 text-destructive hover:bg-destructive/10 rounded-md transition-colors shrink-0"
-                title="Remove selector"
-              >
-                ✕
-              </button>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
 
-        <Modal title="Scan URL for Selectors" open={showScanModal} onClose={() => setShowScanModal(false)}>
-          <div className="space-y-4">
+      <button
+        onClick={addCheck}
+        className="px-4 py-2 border-2 border-dashed border-border rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors w-full"
+      >
+        + Add Selector
+      </button>
+
+      <Modal
+        open={showScanModal}
+        onClose={() => {
+          setShowScanModal(false)
+          setScanResults([])
+        }}
+        title="Scan Page for Selectors"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">Page URL</label>
+            <input
+              type="text"
+              placeholder="https://example.com"
+              value={scanUrl}
+              onChange={(e) => setScanUrl(e.target.value)}
+              autoFocus
+              className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={scanIds} onChange={(e) => setScanIds(e.target.checked)} />
+              IDs
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={scanClasses} onChange={(e) => setScanClasses(e.target.checked)} />
+              Classes
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={scanTestids} onChange={(e) => setScanTestids(e.target.checked)} />
+              data-testid
+            </label>
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">Custom selector (optional)</label>
+            <input
+              type="text"
+              placeholder="e.g. [data-cy]"
+              value={scanCustom}
+              onChange={(e) => setScanCustom(e.target.value)}
+              className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          <button
+            onClick={handleScan}
+            disabled={!scanUrl.trim() || scanning}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {scanning ? 'Scanning...' : 'Scan'}
+          </button>
+
+          {scanResults.length > 0 && (
             <div>
-              <label className="text-sm font-medium block mb-1">URL</label>
-              <input
-                type="text"
-                value={scanUrl}
-                onChange={(e) => setScanUrl(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="https://example.com"
-                autoFocus
-              />
-            </div>
-            <fieldset className="space-y-2">
-              <legend className="text-sm font-medium">Selector Types</legend>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={scanIds} onChange={(e) => setScanIds(e.target.checked)} className="accent-primary" />
-                IDs (<code className="text-xs text-muted-foreground">#my-id</code>)
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={scanClasses} onChange={(e) => setScanClasses(e.target.checked)} className="accent-primary" />
-                Classes (<code className="text-xs text-muted-foreground">.my-class</code>)
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={scanTestids} onChange={(e) => setScanTestids(e.target.checked)} className="accent-primary" />
-                data-testid (<code className="text-xs text-muted-foreground">[data-testid="x"]</code>)
-              </label>
-            </fieldset>
-            <div>
-              <label className="text-sm font-medium block mb-1">Custom Selector (verify it exists)</label>
-              <input
-                type="text"
-                value={scanCustom}
-                onChange={(e) => setScanCustom(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="e.g. .header .nav-link"
-              />
-            </div>
-            <button
-              onClick={handleScan}
-              disabled={!scanUrl.trim() || scanning}
-              className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              {scanning ? 'Scanning...' : 'Scan'}
-            </button>
-            {scanResults.length > 0 && (
-              <div>
-                <label className="text-sm font-medium block mb-1">
-                  Found {scanResults.length} selector{scanResults.length !== 1 ? 's' : ''}
-                </label>
-                <div className="max-h-48 overflow-y-auto border border-border rounded-md divide-y divide-border">
-                  {scanResults.filter((r) => !checks.some((c) => c.selector === r.selector)).map((r, i) => (
+              <h4 className="text-sm font-medium mb-2">Found {scanResults.length} selectors</h4>
+              <div className="max-h-60 overflow-y-auto space-y-1">
+                {scanResults.map((sr, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between gap-2 text-sm border border-border rounded p-2"
+                  >
+                    <div className="truncate">
+                      <code className="text-xs bg-muted px-1 rounded">{sr.selector}</code>
+                      <span className="text-muted-foreground ml-2 text-xs">{sr.typeName}</span>
+                    </div>
                     <button
-                      key={i}
                       onClick={() => {
-                        if (checks.some((c) => c.selector === r.selector)) return
-                        persist([...checks, { selector: r.selector, label: r.selector }])
+                        persist([...checks, { selector: sr.selector, label: sr.typeName }])
                         setScanResults((prev) => prev.filter((_, j) => j !== i))
                       }}
-                      className="w-full text-left px-3 py-2 text-sm font-mono hover:bg-muted transition-colors flex items-center justify-between"
+                      className="text-xs text-primary hover:underline shrink-0"
                     >
-                      <span>{r.selector}</span>
-                      <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{r.typeName}</span>
+                      Add
                     </button>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">Click a selector to add it to the template</p>
+                  </div>
+                ))}
               </div>
-            )}
-            {!scanning && scanResults.length === 0 && scanUrl.trim() && (
-              <p className="text-sm text-muted-foreground">No selectors found for the selected types.</p>
-            )}
-          </div>
-        </Modal>
+            </div>
+          )}
+
+          {scanning && scanResults.length === 0 && <p className="text-sm text-muted-foreground">Scanning...</p>}
+        </div>
+      </Modal>
     </div>
   )
 }

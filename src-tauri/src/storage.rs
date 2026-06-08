@@ -1,6 +1,35 @@
 use std::path::PathBuf;
 use crate::models::{AppData, AuditRun, RunFileInfo};
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_datetime_rfc3339() {
+        let result = format_datetime_for_filename("2026-06-07T09:19:56.123Z");
+        assert_eq!(result, "2026-06-07_09-19-56");
+    }
+
+    #[test]
+    fn test_format_datetime_naive() {
+        let result = format_datetime_for_filename("2026-06-07T09:19:56Z");
+        assert_eq!(result, "2026-06-07_09-19-56");
+    }
+
+    #[test]
+    fn test_format_datetime_fallback() {
+        let result = format_datetime_for_filename("2026-06-07T09:19:56.123Z");
+        assert!(result.contains("06-07"));
+    }
+
+    #[test]
+    fn test_format_datetime_invalid() {
+        let result = format_datetime_for_filename("not-a-date");
+        assert_eq!(result, "not-a-date");
+    }
+}
+
 pub struct Storage {
     dir: PathBuf,
 }

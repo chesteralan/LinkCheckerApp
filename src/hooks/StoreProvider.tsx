@@ -12,11 +12,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [tl, ct, a] = await Promise.all([
-        api.listTargetLists(),
-        api.listCheckTemplates(),
-        api.listAudits(),
-      ])
+      const [tl, ct, a] = await Promise.all([api.listTargetLists(), api.listCheckTemplates(), api.listAudits()])
       setTargetLists(tl)
       setCheckTemplates(ct)
       setAudits(a)
@@ -27,7 +23,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    Promise.all([api.listTargetLists(), api.listCheckTemplates(), api.listAudits()])
+      .then(([tl, ct, a]) => {
+        setTargetLists(tl)
+        setCheckTemplates(ct)
+        setAudits(a)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
 
   const createTargetList = useCallback(async (name: string, urls: string[]) => {
     const created = await api.createTargetList({ name, urls })
@@ -52,41 +57,66 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return created
   }, [])
 
-  const updateCheckTemplate = useCallback(async (id: string, data: { name?: string; checks?: { selector: string; label: string }[] }) => {
-    const updated = await api.updateCheckTemplate({ id, ...data })
-    setCheckTemplates((prev) => prev.map((ct) => (ct.id === id ? updated : ct)))
-    return updated
-  }, [])
+  const updateCheckTemplate = useCallback(
+    async (id: string, data: { name?: string; checks?: { selector: string; label: string }[] }) => {
+      const updated = await api.updateCheckTemplate({ id, ...data })
+      setCheckTemplates((prev) => prev.map((ct) => (ct.id === id ? updated : ct)))
+      return updated
+    },
+    [],
+  )
 
-  const patchCheckTemplate = useCallback((id: string, data: { name?: string; checks?: { selector: string; label: string }[] }) => {
-    setCheckTemplates((prev) => prev.map((ct) => {
-      if (ct.id !== id) return ct
-      const checks = data.checks?.map((c, i) => ({
-        id: ct.checks[i]?.id ?? crypto.randomUUID(),
-        selector: c.selector,
-        label: c.label,
-      })) ?? ct.checks
-      return { ...ct, checks, updatedAt: new Date().toISOString() }
-    }))
-    api.updateCheckTemplate({ id, ...data }).catch(() => {})
-  }, [])
+  const patchCheckTemplate = useCallback(
+    (id: string, data: { name?: string; checks?: { selector: string; label: string }[] }) => {
+      setCheckTemplates((prev) =>
+        prev.map((ct) => {
+          if (ct.id !== id) return ct
+          const checks =
+            data.checks?.map((c, i) => ({
+              id: ct.checks[i]?.id ?? crypto.randomUUID(),
+              selector: c.selector,
+              label: c.label,
+            })) ?? ct.checks
+          return { ...ct, checks, updatedAt: new Date().toISOString() }
+        }),
+      )
+      api.updateCheckTemplate({ id, ...data }).catch(() => {})
+    },
+    [],
+  )
 
   const deleteCheckTemplate = useCallback(async (id: string) => {
     await api.deleteCheckTemplate(id)
     setCheckTemplates((prev) => prev.filter((ct) => ct.id !== id))
   }, [])
 
-  const createAudit = useCallback(async (name: string, targetListId: string, checkTemplateId: string, config: Audit['config'], originOverride?: string, urlPostfix?: string) => {
-    const created = await api.createAudit({ name, targetListId, checkTemplateId, config, originOverride, urlPostfix })
-    setAudits((prev) => [...prev, created])
-    return created
-  }, [])
+  const createAudit = useCallback(
+    async (
+      name: string,
+      targetListId: string,
+      checkTemplateId: string,
+      config: Audit['config'],
+      originOverride?: string,
+      urlPostfix?: string,
+    ) => {
+      const created = await api.createAudit({ name, targetListId, checkTemplateId, config, originOverride, urlPostfix })
+      setAudits((prev) => [...prev, created])
+      return created
+    },
+    [],
+  )
 
-  const updateAudit = useCallback(async (id: string, data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string }) => {
-    const updated = await api.updateAudit({ id, ...data })
-    setAudits((prev) => prev.map((a) => (a.id === id ? updated : a)))
-    return updated
-  }, [])
+  const updateAudit = useCallback(
+    async (
+      id: string,
+      data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string },
+    ) => {
+      const updated = await api.updateAudit({ id, ...data })
+      setAudits((prev) => prev.map((a) => (a.id === id ? updated : a)))
+      return updated
+    },
+    [],
+  )
 
   const deleteAudit = useCallback(async (id: string) => {
     await api.deleteAudit(id)
@@ -94,13 +124,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <StoreContext.Provider value={{
-      targetLists, checkTemplates, audits, loading,
-      createTargetList, updateTargetList, deleteTargetList,
-      createCheckTemplate, updateCheckTemplate, patchCheckTemplate, deleteCheckTemplate,
-      createAudit, updateAudit, deleteAudit,
-      reload: load,
-    }}>
+    <StoreContext.Provider
+      value={{
+        targetLists,
+        checkTemplates,
+        audits,
+        loading,
+        createTargetList,
+        updateTargetList,
+        deleteTargetList,
+        createCheckTemplate,
+        updateCheckTemplate,
+        patchCheckTemplate,
+        deleteCheckTemplate,
+        createAudit,
+        updateAudit,
+        deleteAudit,
+        reload: load,
+      }}
+    >
       {children}
     </StoreContext.Provider>
   )

@@ -259,6 +259,203 @@ fn apply_origin_override(url: &str, origin_override: &Option<String>) -> String 
     url.to_string()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_title() {
+        let html = "<html><head><title>  My Page Title  </title></head><body></body></html>";
+        assert_eq!(extract_title(html), Some("My Page Title".to_string()));
+    }
+
+    #[test]
+    fn test_extract_title_empty() {
+        let html = "<html><head></head><body></body></html>";
+        assert_eq!(extract_title(html), None);
+    }
+
+    #[test]
+    fn test_extract_title_no_title() {
+        assert_eq!(extract_title("no title here"), None);
+    }
+
+    #[test]
+    fn test_apply_url_postfix_none() {
+        assert_eq!(apply_url_postfix("https://example.com", &None), "https://example.com");
+    }
+
+    #[test]
+    fn test_apply_url_postfix_empty() {
+        assert_eq!(apply_url_postfix("https://example.com", &Some(String::new())), "https://example.com");
+    }
+
+    #[test]
+    fn test_apply_url_postfix_applied() {
+        assert_eq!(apply_url_postfix("https://example.com/page", &Some(".html".to_string())), "https://example.com/page.html");
+    }
+
+    #[test]
+    fn test_apply_origin_override_no_override() {
+        assert_eq!(apply_origin_override("https://example.com/page", &None), "https://example.com/page");
+    }
+
+    #[test]
+    fn test_apply_origin_override_empty() {
+        assert_eq!(apply_origin_override("https://example.com/page", &Some(String::new())), "https://example.com/page");
+    }
+
+    #[test]
+    fn test_apply_origin_override_replaces_origin() {
+        assert_eq!(
+            apply_origin_override("https://old.com/path?q=1", &Some("https://new.com".to_string())),
+            "https://new.com/path?q=1"
+        );
+    }
+
+    #[test]
+    fn test_apply_origin_override_no_path() {
+        assert_eq!(
+            apply_origin_override("https://old.com", &Some("https://new.com".to_string())),
+            "https://new.com/"
+        );
+    }
+
+    #[test]
+    fn test_apply_origin_override_trailing_slash() {
+        assert_eq!(
+            apply_origin_override("https://old.com/path", &Some("https://new.com/".to_string())),
+            "https://new.com/path"
+        );
+    }
+
+    #[test]
+    fn test_apply_origin_override_no_scheme_fallback() {
+        assert_eq!(
+            apply_origin_override("no-scheme-url", &Some("https://new.com".to_string())),
+            "no-scheme-url"
+        );
+    }
+
+    #[test]
+    fn test_compute_summary_all_passed() {
+        let results = vec![
+            PageResult {
+                url: "https://a.com".into(),
+                error: None,
+                checks: vec![
+                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: Some("Hi".into()) },
+                ],
+                response_time_ms: Some(100),
+                page_title: None,
+                status: Some(200),
+                status_text: "OK".into(),
+            },
+            PageResult {
+                url: "https://b.com".into(),
+                error: None,
+                checks: vec![
+                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: Some("Hi".into()) },
+                ],
+                response_time_ms: Some(200),
+                page_title: None,
+                status: Some(200),
+                status_text: "OK".into(),
+            },
+        ];
+        let summary = compute_summary(&results);
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.passed, 2);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.errored, 0);
+        assert!((summary.avg_response_time_ms - 150.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_compute_summary_mixed() {
+        let results = vec![
+            PageResult {
+                url: "https://a.com".into(),
+                error: None,
+                checks: vec![
+                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: None },
+                ],
+                response_time_ms: Some(100),
+                page_title: None,
+                status: Some(200),
+                status_text: "OK".into(),
+            },
+            PageResult {
+                url: "https://b.com".into(),
+                error: None,
+                checks: vec![
+                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: false, count: 0, text_content: None },
+                ],
+                response_time_ms: Some(200),
+                page_title: None,
+                status: Some(200),
+                status_text: "OK".into(),
+            },
+            PageResult {
+                url: "https://c.com".into(),
+                error: Some("timeout".into()),
+                checks: vec![],
+                response_time_ms: None,
+                page_title: None,
+                status: None,
+                status_text: "Error".into(),
+            },
+        ];
+        let summary = compute_summary(&results);
+        assert_eq!(summary.total, 3);
+        assert_eq!(summary.passed, 1);
+        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.errored, 1);
+    }
+
+    #[test]
+    fn test_compute_summary_empty() {
+        let summary = compute_summary(&[]);
+        assert_eq!(summary.total, 0);
+        assert_eq!(summary.passed, 0);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.errored, 0);
+        assert_eq!(summary.avg_response_time_ms, 0.0);
+    }
+
+    #[test]
+    fn test_run_selectors_valid() {
+        let html = "<html><body><h1>Hello</h1><p>World</p></body></html>";
+        let checks = vec![
+            SelectorCheck { id: "c1".into(), selector: "h1".into(), label: "Heading".into() },
+            SelectorCheck { id: "c2".into(), selector: "p".into(), label: "Paragraph".into() },
+            SelectorCheck { id: "c3".into(), selector: ".missing".into(), label: "Missing".into() },
+        ];
+        let results = run_selectors(html, &checks);
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].found, true);
+        assert_eq!(results[0].count, 1);
+        assert_eq!(results[0].text_content.as_deref(), Some("Hello"));
+        assert_eq!(results[1].found, true);
+        assert_eq!(results[1].count, 1);
+        assert_eq!(results[1].text_content.as_deref(), Some("World"));
+        assert_eq!(results[2].found, false);
+        assert_eq!(results[2].count, 0);
+        assert_eq!(results[2].text_content, None);
+    }
+
+    #[test]
+    fn test_run_selectors_invalid_selector() {
+        let html = "<html><body></body></html>";
+        let checks = vec![
+            SelectorCheck { id: "c1".into(), selector: "[[invalid".into(), label: "Bad".into() },
+        ];
+        let results = run_selectors(html, &checks);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].found, false);
+    }
+}
+
 fn compute_summary(results: &[PageResult]) -> RunSummary {
     let total = results.len();
     let mut passed = 0usize;

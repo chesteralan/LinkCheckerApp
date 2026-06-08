@@ -4,31 +4,41 @@ type HotkeyMap = Record<string, () => void>
 
 export function useHotkeys(map: HotkeyMap, enabled = true) {
   const mapRef = useRef(map)
-  mapRef.current = map
 
-  const handler = useCallback((e: KeyboardEvent) => {
-    if (!enabled) return
+  useEffect(() => {
+    mapRef.current = map
+  }, [map])
 
-    const target = e.target as HTMLElement
-    const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable
+  const handler = useCallback(
+    (e: KeyboardEvent) => {
+      if (!enabled) return
 
-    const key = [
-      e.metaKey ? 'Cmd' : '',
-      e.ctrlKey ? 'Ctrl' : '',
-      e.shiftKey ? 'Shift' : '',
-      e.altKey ? 'Alt' : '',
-      e.key,
-    ]
-      .filter(Boolean)
-      .join('+')
+      const target = e.target as HTMLElement
+      const isInput =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
 
-    const action = mapRef.current[key] ?? mapRef.current[e.key]
-    if (action) {
-      if (isInput && !(e.metaKey || e.ctrlKey)) return
-      e.preventDefault()
-      action()
-    }
-  }, [enabled])
+      const key = [
+        e.metaKey ? 'Cmd' : '',
+        e.ctrlKey ? 'Ctrl' : '',
+        e.shiftKey ? 'Shift' : '',
+        e.altKey ? 'Alt' : '',
+        e.key,
+      ]
+        .filter(Boolean)
+        .join('+')
+
+      const action = mapRef.current[key] ?? mapRef.current[e.key]
+      if (action) {
+        if (isInput && !(e.metaKey || e.ctrlKey)) return
+        e.preventDefault()
+        action()
+      }
+    },
+    [enabled],
+  )
 
   useEffect(() => {
     document.addEventListener('keydown', handler)

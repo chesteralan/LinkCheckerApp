@@ -1,51 +1,91 @@
 import { useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { save } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useAuditRunner } from '@/hooks/useAuditRunner'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { ProgressBar } from '@/components/ProgressBar'
 import { ResultsTable } from '@/components/ResultsTable'
+import { LiveSummary } from '@/components/LiveSummary'
 import { writeFile } from '@/lib/tauri'
-import type { Audit, AuditRun, PageResult } from '@/types'
+import { csvEscape } from '@/utils/csv'
+import type { AuditRun } from '@/types'
 
 type AuditTab = 'overview' | 'results'
 
-interface Props {
-  audit: Audit
-  onBack: () => void
-}
-
-export function AuditDetailPage({ audit, onBack }: Props) {
-  const { targetLists, checkTemplates, updateAudit, deleteAudit } = useStore()
+export function AuditDetailPage() {
+  const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const { audits, targetLists, checkTemplates, updateAudit, deleteAudit } = useStore()
   const runner = useAuditRunner()
+
+  const audit = audits.find((a) => a.id === id)
+
   const [editing, setEditing] = useState(false)
-  const [editName, setEditName] = useState(audit.name)
-  const [editMode, setEditMode] = useState<'sequential' | 'batch'>(audit.config.mode)
-  const [editBatchSize, setEditBatchSize] = useState(audit.config.batchSize)
-  const [editTimeoutSecs, setEditTimeoutSecs] = useState(audit.config.timeoutSecs)
-  const [editOriginOverride, setEditOriginOverride] = useState(audit.originOverride ?? '')
-  const [editUrlPostfix, setEditUrlPostfix] = useState(audit.urlPostfix ?? '')
-  const [originOverride, setOriginOverride] = useState(audit.originOverride ?? '')
-  const [urlPostfix, setUrlPostfix] = useState(audit.urlPostfix ?? '')
+  const [editName, setEditName] = useState(audit?.name ?? '')
+  const [editMode, setEditMode] = useState<'sequential' | 'batch'>(audit?.config.mode ?? 'batch')
+  const [editBatchSize, setEditBatchSize] = useState(audit?.config.batchSize ?? 5)
+  const [editTimeoutSecs, setEditTimeoutSecs] = useState(audit?.config.timeoutSecs ?? 10)
+  const [editOriginOverride, setEditOriginOverride] = useState(audit?.originOverride ?? '')
+  const [editUrlPostfix, setEditUrlPostfix] = useState(audit?.urlPostfix ?? '')
+  const [originOverride, setOriginOverride] = useState(audit?.originOverride ?? '')
+  const [urlPostfix, setUrlPostfix] = useState(audit?.urlPostfix ?? '')
   const [activeTab, setActiveTab] = useState<AuditTab>('overview')
   const [filter, setFilter] = useState<'all' | 'passed' | 'failed' | 'errored'>('all')
 
-  const tl = targetLists.find((t) => t.id === audit.targetListId)
-  const ct = checkTemplates.find((c) => c.id === audit.checkTemplateId)
+  useHotkeys(
+    {
+      'Cmd+r': () => {
+        if (audit && !runner.running) {
+          setActiveTab('results')
+          runner.start(audit.id, originOverride || undefined, urlPostfix || undefined)
+        }
+      },
+      'Ctrl+r': () => {
+        if (audit && !runner.running) {
+          setActiveTab('results')
+          runner.start(audit.id, originOverride || undefined, urlPostfix || undefined)
+        }
+      },
+      'Cmd+Enter': () => {
+        if (editing && editName.trim()) {
+          setOriginOverride(editOriginOverride)
+          setUrlPostfix(editUrlPostfix)
+          setEditing(false)
+        }
+      },
+      'Ctrl+Enter': () => {
+        if (editing && editName.trim()) {
+          setOriginOverride(editOriginOverride)
+          setUrlPostfix(editUrlPostfix)
+          setEditing(false)
+        }
+      },
+    },
+    true,
+  )
+
+  if (!audit) {
+    return <div className="text-muted-foreground">Audit not found.</div>
+  }
+  const a = audit
+
+  const tl = targetLists.find((t) => t.id === a.targetListId)
+  const ct = checkTemplates.find((c) => c.id === a.checkTemplateId)
 
   function startEdit() {
-    setEditName(audit.name)
-    setEditMode(audit.config.mode)
-    setEditBatchSize(audit.config.batchSize)
-    setEditTimeoutSecs(audit.config.timeoutSecs)
-    setEditOriginOverride(audit.originOverride ?? '')
-    setEditUrlPostfix(audit.urlPostfix ?? '')
+    setEditName(a.name)
+    setEditMode(a.config.mode)
+    setEditBatchSize(a.config.batchSize)
+    setEditTimeoutSecs(a.config.timeoutSecs)
+    setEditOriginOverride(a.originOverride ?? '')
+    setEditUrlPostfix(a.urlPostfix ?? '')
     setEditing(true)
   }
 
   async function handleUpdate() {
     if (!editName.trim()) return
-    await updateAudit(audit.id, {
+    await updateAudit(a.id, {
       name: editName,
       config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs },
       originOverride: editOriginOverride,
@@ -57,27 +97,18 @@ export function AuditDetailPage({ audit, onBack }: Props) {
   }
 
   async function handleDelete() {
-    await deleteAudit(audit.id)
-    onBack()
+    await deleteAudit(a.id)
+    navigate('/audits')
   }
 
   async function handleRun() {
     setActiveTab('results')
-    await runner.start(audit.id, originOverride || undefined, urlPostfix || undefined)
+    await runner.start(a.id, originOverride || undefined, urlPostfix || undefined)
   }
-
-  const handleRunCb = () => { if (!runner.running) handleRun() }
-
-  useHotkeys({
-    'Cmd+r': handleRunCb,
-    'Ctrl+r': handleRunCb,
-    'Cmd+Enter': () => { if (editing) handleUpdate() },
-    'Ctrl+Enter': () => { if (editing) handleUpdate() },
-  })
 
   async function exportCsv(run: AuditRun, selectors: { id: string; label: string; selector: string }[]) {
     const path = await save({
-      defaultPath: `${audit.name}-${new Date().toISOString().slice(0, 10)}.csv`,
+      defaultPath: `${a.name}-${new Date().toISOString().slice(0, 10)}.csv`,
       filters: [{ name: 'CSV', extensions: ['csv'] }],
     })
     if (!path) return
@@ -105,37 +136,6 @@ export function AuditDetailPage({ audit, onBack }: Props) {
     await writeFile(path, content)
   }
 
-  function LiveSummary({ results }: { results: PageResult[] }) {
-    const passed = results.filter((r) => !r.error && r.checks.every((c) => c.found)).length
-    const failed = results.filter((r) => !r.error && r.checks.some((c) => !c.found)).length
-    const errored = results.filter((r) => r.error).length
-    const totalMs = results.reduce((s, r) => s + (r.responseTimeMs ?? 0), 0)
-    const avg = results.length > 0 ? Math.round(totalMs / results.length) : 0
-
-    function FilterBtn({ label, count, status, className }: { label: string; count: number; status: typeof filter; className: string }) {
-      return (
-        <button
-          onClick={() => setFilter(filter === status ? 'all' : status)}
-          className={`${className} ${filter === status ? 'underline font-medium' : ''} hover:underline cursor-pointer`}
-        >
-          {label} {count}
-        </button>
-      )
-    }
-
-    return (
-      <div className="flex gap-4 text-sm items-center">
-        <FilterBtn label="✓ passed" count={passed} status="passed" className="text-success" />
-        <FilterBtn label="✗ failed" count={failed} status="failed" className="text-destructive" />
-        <FilterBtn label="⚠ errored" count={errored} status="errored" className="text-muted-foreground" />
-        <span className="text-muted-foreground">avg {avg}ms</span>
-        {filter !== 'all' && (
-          <button onClick={() => setFilter('all')} className="text-xs text-primary hover:underline cursor-pointer">clear filter</button>
-        )}
-      </div>
-    )
-  }
-
   const filteredResults = (runner.run?.results ?? []).filter((r) => {
     if (filter === 'passed') return !r.error && r.checks.every((c) => c.found)
     if (filter === 'failed') return !r.error && r.checks.some((c) => !c.found)
@@ -147,8 +147,10 @@ export function AuditDetailPage({ audit, onBack }: Props) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="text-sm text-primary hover:underline">&larr; Audits</button>
-          <h2 className="text-2xl font-bold">{audit.name}</h2>
+          <button onClick={() => navigate('/audits')} className="text-sm text-primary hover:underline">
+            &larr; Audits
+          </button>
+          <h2 className="text-2xl font-bold">{a.name}</h2>
         </div>
       </div>
 
@@ -156,11 +158,17 @@ export function AuditDetailPage({ audit, onBack }: Props) {
         {tl?.name ?? 'Unknown'} · {tl?.urls.length ?? 0} URLs
         {' — '}
         {ct?.name ?? 'Unknown'} · {ct?.checks.length ?? 0} selectors
-        {audit.originOverride && (
-          <> · Origin: <span className="font-mono text-xs">{audit.originOverride}</span></>
+        {a.originOverride && (
+          <>
+            {' '}
+            · Origin: <span className="font-mono text-xs">{a.originOverride}</span>
+          </>
         )}
-        {audit.urlPostfix && (
-          <> · Postfix: <span className="font-mono text-xs">{audit.urlPostfix}</span></>
+        {a.urlPostfix && (
+          <>
+            {' '}
+            · Postfix: <span className="font-mono text-xs">{a.urlPostfix}</span>
+          </>
         )}
       </div>
 
@@ -323,7 +331,9 @@ export function AuditDetailPage({ audit, onBack }: Props) {
                   <h4 className="text-sm font-medium mb-1">URLs ({tl.urls.length})</h4>
                   <div className="max-h-40 overflow-y-auto space-y-1">
                     {tl.urls.map((url, i) => (
-                      <div key={i} className="text-sm font-mono text-muted-foreground truncate">{url}</div>
+                      <div key={i} className="text-sm font-mono text-muted-foreground truncate">
+                        {url}
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -372,9 +382,7 @@ export function AuditDetailPage({ audit, onBack }: Props) {
 
       {activeTab === 'results' && (
         <div className="space-y-4">
-          {runner.progress && (
-            <ProgressBar checked={runner.progress.checked} total={runner.progress.total} />
-          )}
+          {runner.progress && <ProgressBar checked={runner.progress.checked} total={runner.progress.total} />}
 
           {runner.running && (
             <div className="flex items-center justify-between gap-2 text-sm">
@@ -394,7 +402,7 @@ export function AuditDetailPage({ audit, onBack }: Props) {
           {(runner.run || runner.running) && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <LiveSummary results={runner.run?.results ?? []} />
+                <LiveSummary results={runner.run?.results ?? []} filter={filter} onFilterChange={setFilter} />
                 {runner.run && !runner.running && (
                   <button
                     onClick={() => exportCsv(runner.run!, ct?.checks ?? [])}
@@ -404,27 +412,15 @@ export function AuditDetailPage({ audit, onBack }: Props) {
                   </button>
                 )}
               </div>
-              <ResultsTable
-                results={filteredResults}
-                selectors={ct?.checks ?? []}
-              />
+              <ResultsTable results={filteredResults} selectors={ct?.checks ?? []} />
             </div>
           )}
 
           {!runner.run && !runner.running && !runner.progress && (
-            <p className="text-sm text-muted-foreground">
-              Press "Run Audit" to start checking URLs.
-            </p>
+            <p className="text-sm text-muted-foreground">Press "Run Audit" to start checking URLs.</p>
           )}
         </div>
       )}
     </div>
   )
-}
-
-function csvEscape(val: string): string {
-  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
-    return `"${val.replace(/"/g, '""')}"`
-  }
-  return val
 }
