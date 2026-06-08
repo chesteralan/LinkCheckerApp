@@ -42,8 +42,12 @@ export function ResultsTable({ results, selectors }: Props) {
                 {result.error ? (
                   <span className="text-destructive text-xs">{result.error}</span>
                 ) : (
-                  <span className={`inline-flex items-center gap-1 ${(result.status ?? 0) >= 400 ? 'text-destructive' : 'text-success'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${(result.status ?? 0) >= 400 ? 'bg-destructive' : 'bg-success'}`} />
+                  <span
+                    className={`inline-flex items-center gap-1 ${(result.status ?? 0) >= 400 ? 'text-destructive' : 'text-success'}`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${(result.status ?? 0) >= 400 ? 'bg-destructive' : 'bg-success'}`}
+                    />
                     {result.status}
                   </span>
                 )}

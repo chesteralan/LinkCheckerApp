@@ -1,28 +1,17 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
 import type { TargetList } from '@/types'
 import { normalizeUrl, readFile, scrapeLinks } from '@/lib/tauri'
+import { resolveUrl } from '@/utils/resolveUrl'
 
-function resolveUrl(href: string, source: string): string {
-  if (href.startsWith('http://') || href.startsWith('https://')) return href
-  try {
-    const origin = new URL(source).origin
-    const joined = href.startsWith('/') ? `${origin}${href}` : `${origin}/${href}`
-    return joined
-  } catch {
-    return href
-  }
-}
-
-interface Props {
-  onViewAudit: (auditId: string) => void
-}
-
-export function TargetListsPage({ onViewAudit }: Props) {
-  const { targetLists, audits, checkTemplates, loading, createTargetList, updateTargetList, deleteTargetList } = useStore()
+export function TargetListsPage() {
+  const navigate = useNavigate()
+  const { targetLists, audits, checkTemplates, loading, createTargetList, updateTargetList, deleteTargetList } =
+    useStore()
   const [editing, setEditing] = useState<TargetList | null>(null)
   const [name, setName] = useState('')
   const [urlsText, setUrlsText] = useState('')
@@ -64,12 +53,17 @@ export function TargetListsPage({ onViewAudit }: Props) {
     await deleteTargetList(id)
   }
 
-  const handleSaveCb = useCallback(() => { if (showForm) handleSave() }, [showForm, name, urlsText, editing])
-
-  useHotkeys({
-    'Cmd+Enter': handleSaveCb,
-    'Ctrl+Enter': handleSaveCb,
-  }, showForm)
+  useHotkeys(
+    {
+      'Cmd+Enter': () => {
+        if (showForm) handleSave()
+      },
+      'Ctrl+Enter': () => {
+        if (showForm) handleSave()
+      },
+    },
+    showForm,
+  )
 
   if (loading) {
     return <div className="text-muted-foreground">Loading...</div>
@@ -80,7 +74,10 @@ export function TargetListsPage({ onViewAudit }: Props) {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Target Lists</h2>
         <button
-          onClick={() => { resetForm(); setShowForm(true) }}
+          onClick={() => {
+            resetForm()
+            setShowForm(true)
+          }}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
         >
           + New List
@@ -99,9 +96,7 @@ export function TargetListsPage({ onViewAudit }: Props) {
           />
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-sm text-muted-foreground">
-                URLs (one per line)
-              </label>
+              <label className="text-sm text-muted-foreground">URLs (one per line)</label>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -119,7 +114,8 @@ export function TargetListsPage({ onViewAudit }: Props) {
                     })
                     if (!path) return
                     const content = await readFile(path)
-                    const lines = content.split('\n')
+                    const lines = content
+                      .split('\n')
                       .map((l) => l.trim())
                       .filter(Boolean)
                       .filter((l) => !l.startsWith(','))
@@ -202,13 +198,12 @@ export function TargetListsPage({ onViewAudit }: Props) {
 
       <div className="space-y-2">
         {targetLists.map((list) => (
-          <div
-            key={list.id}
-            className="border border-border rounded-lg p-4 flex items-center justify-between"
-          >
+          <div key={list.id} className="border border-border rounded-lg p-4 flex items-center justify-between">
             <div>
               <h3 className="font-medium">{list.name}</h3>
-              <p className="text-sm text-muted-foreground">{list.urls.length} URL{list.urls.length !== 1 ? 's' : ''}</p>
+              <p className="text-sm text-muted-foreground">
+                {list.urls.length} URL{list.urls.length !== 1 ? 's' : ''}
+              </p>
             </div>
             <div className="flex gap-2">
               <button
@@ -234,35 +229,44 @@ export function TargetListsPage({ onViewAudit }: Props) {
         ))}
       </div>
 
-      <Modal open={!!auditModalList} onClose={() => setAuditModalList(null)} title={`Audits · ${auditModalList?.name ?? ''}`}>
-        {auditModalList && (() => {
-          const related = audits.filter((a) => a.targetListId === auditModalList.id)
-          if (related.length === 0) {
-            return <p className="text-sm text-muted-foreground">No audits use this target list.</p>
-          }
-          return (
-            <div className="space-y-2">
-              {related.map((audit) => {
-                const ct = checkTemplates.find((t) => t.id === audit.checkTemplateId)
-                return (
-                  <button
-                    key={audit.id}
-                    onClick={() => { setAuditModalList(null); onViewAudit(audit.id) }}
-                    className="w-full text-left border border-border rounded-lg p-3 hover:border-primary transition-colors cursor-pointer"
-                  >
-                    <div className="font-medium">{audit.name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {ct?.name ?? 'Unknown template'}
-                      {' · '}
-                      {audit.config.mode === 'sequential' ? 'Sequential' : `Batch x${audit.config.batchSize}`}
-                      {' · '}{audit.config.timeoutSecs}s timeout
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          )
-        })()}
+      <Modal
+        open={!!auditModalList}
+        onClose={() => setAuditModalList(null)}
+        title={`Audits · ${auditModalList?.name ?? ''}`}
+      >
+        {auditModalList &&
+          (() => {
+            const related = audits.filter((a) => a.targetListId === auditModalList.id)
+            if (related.length === 0) {
+              return <p className="text-sm text-muted-foreground">No audits use this target list.</p>
+            }
+            return (
+              <div className="space-y-2">
+                {related.map((audit) => {
+                  const ct = checkTemplates.find((t) => t.id === audit.checkTemplateId)
+                  return (
+                    <button
+                      key={audit.id}
+                      onClick={() => {
+                        setAuditModalList(null)
+                        navigate(`/audits/${audit.id}`)
+                      }}
+                      className="w-full text-left border border-border rounded-lg p-3 hover:border-primary transition-colors cursor-pointer"
+                    >
+                      <div className="font-medium">{audit.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {ct?.name ?? 'Unknown template'}
+                        {' · '}
+                        {audit.config.mode === 'sequential' ? 'Sequential' : `Batch x${audit.config.batchSize}`}
+                        {' · '}
+                        {audit.config.timeoutSecs}s timeout
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })()}
       </Modal>
     </div>
   )

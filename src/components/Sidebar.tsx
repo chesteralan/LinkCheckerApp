@@ -1,38 +1,25 @@
-import type { Page } from '@/App'
+import { NavLink } from 'react-router-dom'
+import { NAV_ITEMS } from '@/utils/constants'
 
-const nav: { id: Page; label: string }[] = [
-  { id: 'check-templates', label: 'Check Templates' },
-  { id: 'target-lists', label: 'Target Lists' },
-  { id: 'audits', label: 'Audits' },
-  { id: 'history', label: 'Run History' },
-]
-
-interface Props {
-  active: Page
-  onNavigate: (page: Page) => void
-}
-
-export function Sidebar({ active, onNavigate }: Props) {
+export function Sidebar() {
   return (
     <aside className="w-56 border-r border-border bg-muted/30 flex flex-col">
       <div className="p-4 border-b border-border">
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          Navigation
-        </h2>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Navigation</h2>
       </div>
       <nav className="flex-1 p-2 space-y-1">
-        {nav.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => onNavigate(item.id)}
-            className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-              active === item.id
-                ? 'bg-primary text-primary-foreground font-medium'
-                : 'text-foreground hover:bg-muted'
-            }`}
+        {NAV_ITEMS.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={({ isActive }) =>
+              `block w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                isActive ? 'bg-primary text-primary-foreground font-medium' : 'text-foreground hover:bg-muted'
+              }`
+            }
           >
             {item.label}
-          </button>
+          </NavLink>
         ))}
       </nav>
     </aside>

@@ -2,7 +2,7 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "target": "es2023",
-    "lib": ["ES2023", "DOM"],
+    "lib": ["ES2023", "DOM", "ES2023.Array"],
     "module": "esnext",
     "types": ["vite/client"],
     "skipLibCheck": true,
@@ -15,14 +15,18 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Linting */
-    "paths": {
-      "@/*": ["./src/*"]
-    },
+    /* Strict mode */
+    "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": false,
+    "noFallthroughCasesInSwitch": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "forceConsistentCasingInFileNames": true,
+
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src"]
 }

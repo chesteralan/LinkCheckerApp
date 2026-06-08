@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
@@ -8,11 +9,8 @@ const modes = [
   { value: 'batch', label: 'Batch (configurable concurrency)' },
 ] as const
 
-interface Props {
-  onViewAudit: (auditId: string) => void
-}
-
-export function AuditsPage({ onViewAudit }: Props) {
+export function AuditsPage() {
+  const navigate = useNavigate()
   const { audits, targetLists, checkTemplates, loading, createAudit } = useStore()
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
@@ -42,12 +40,17 @@ export function AuditsPage({ onViewAudit }: Props) {
     resetForm()
   }
 
-  const handleCreateCb = useCallback(() => { if (showForm) handleCreate() }, [showForm, name, targetListId, checkTemplateId, mode, batchSize, timeoutSecs])
-
-  useHotkeys({
-    'Cmd+Enter': handleCreateCb,
-    'Ctrl+Enter': handleCreateCb,
-  }, showForm)
+  useHotkeys(
+    {
+      'Cmd+Enter': () => {
+        if (showForm) handleCreate()
+      },
+      'Ctrl+Enter': () => {
+        if (showForm) handleCreate()
+      },
+    },
+    showForm,
+  )
 
   if (loading) {
     return <div className="text-muted-foreground">Loading...</div>
@@ -58,7 +61,10 @@ export function AuditsPage({ onViewAudit }: Props) {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Audits</h2>
         <button
-          onClick={() => { resetForm(); setShowForm(true) }}
+          onClick={() => {
+            resetForm()
+            setShowForm(true)
+          }}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
         >
           + New Audit
@@ -118,7 +124,9 @@ export function AuditsPage({ onViewAudit }: Props) {
                 className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 {modes.map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
                 ))}
               </select>
             </div>
@@ -166,7 +174,6 @@ export function AuditsPage({ onViewAudit }: Props) {
         </div>
       </Modal>
 
-      {/* Audit list */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {audits.map((audit) => {
           const tl = targetLists.find((t) => t.id === audit.targetListId)
@@ -174,7 +181,7 @@ export function AuditsPage({ onViewAudit }: Props) {
           return (
             <button
               key={audit.id}
-              onClick={() => onViewAudit(audit.id)}
+              onClick={() => navigate(`/audits/${audit.id}`)}
               className="text-left border border-border rounded-lg p-4 hover:border-primary transition-colors"
             >
               <h3 className="font-medium">{audit.name}</h3>
@@ -183,7 +190,8 @@ export function AuditsPage({ onViewAudit }: Props) {
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {audit.config.mode === 'sequential' ? 'Sequential' : `Batch x${audit.config.batchSize}`}
-                {' · '}{audit.config.timeoutSecs}s timeout
+                {' · '}
+                {audit.config.timeoutSecs}s timeout
                 {audit.originOverride && ` · ${audit.originOverride}`}
                 {audit.urlPostfix && ` · +${audit.urlPostfix}`}
               </p>
@@ -191,9 +199,7 @@ export function AuditsPage({ onViewAudit }: Props) {
           )
         })}
         {audits.length === 0 && (
-          <p className="text-muted-foreground text-sm col-span-2">
-            No audits yet. Create one to get started.
-          </p>
+          <p className="text-muted-foreground text-sm col-span-2">No audits yet. Create one to get started.</p>
         )}
       </div>
     </div>

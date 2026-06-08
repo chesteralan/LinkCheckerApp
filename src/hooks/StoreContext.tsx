@@ -13,11 +13,24 @@ export interface StoreActions {
   updateTargetList: (id: string, data: { name?: string; urls?: string[] }) => Promise<TargetList>
   deleteTargetList: (id: string) => Promise<void>
   createCheckTemplate: (name: string, checks: { selector: string; label: string }[]) => Promise<CheckTemplate>
-  updateCheckTemplate: (id: string, data: { name?: string; checks?: { selector: string; label: string }[] }) => Promise<CheckTemplate>
+  updateCheckTemplate: (
+    id: string,
+    data: { name?: string; checks?: { selector: string; label: string }[] },
+  ) => Promise<CheckTemplate>
   patchCheckTemplate: (id: string, data: { name?: string; checks?: { selector: string; label: string }[] }) => void
   deleteCheckTemplate: (id: string) => Promise<void>
-  createAudit: (name: string, targetListId: string, checkTemplateId: string, config: Audit['config'], originOverride?: string, urlPostfix?: string) => Promise<Audit>
-  updateAudit: (id: string, data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string }) => Promise<Audit>
+  createAudit: (
+    name: string,
+    targetListId: string,
+    checkTemplateId: string,
+    config: Audit['config'],
+    originOverride?: string,
+    urlPostfix?: string,
+  ) => Promise<Audit>
+  updateAudit: (
+    id: string,
+    data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string },
+  ) => Promise<Audit>
   deleteAudit: (id: string) => Promise<void>
   reload: () => Promise<void>
 }

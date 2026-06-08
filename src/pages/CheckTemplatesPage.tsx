@@ -1,14 +1,11 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
 
-interface Props {
-  onQuickAudit?: (templateId: string) => void
-  onEditTemplate?: (templateId: string) => void
-}
-
-export function CheckTemplatesPage({ onQuickAudit, onEditTemplate }: Props) {
+export function CheckTemplatesPage() {
+  const navigate = useNavigate()
   const { checkTemplates, loading, createCheckTemplate, updateCheckTemplate, deleteCheckTemplate } = useStore()
   const [name, setName] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -34,7 +31,7 @@ export function CheckTemplatesPage({ onQuickAudit, onEditTemplate }: Props) {
     } else {
       const created = await createCheckTemplate(name.trim(), [])
       resetForm()
-      onEditTemplate?.(created.id)
+      navigate(`/check-templates/${created.id}`)
     }
   }
 
@@ -42,12 +39,17 @@ export function CheckTemplatesPage({ onQuickAudit, onEditTemplate }: Props) {
     await deleteCheckTemplate(id)
   }
 
-  const handleSaveCb = useCallback(() => { if (showForm) handleSave() }, [showForm, name])
-
-  useHotkeys({
-    'Cmd+Enter': handleSaveCb,
-    'Ctrl+Enter': handleSaveCb,
-  }, showForm)
+  useHotkeys(
+    {
+      'Cmd+Enter': () => {
+        if (showForm) handleSave()
+      },
+      'Ctrl+Enter': () => {
+        if (showForm) handleSave()
+      },
+    },
+    showForm,
+  )
 
   if (loading) {
     return <div className="text-muted-foreground">Loading...</div>
@@ -58,7 +60,10 @@ export function CheckTemplatesPage({ onQuickAudit, onEditTemplate }: Props) {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Check Templates</h2>
         <button
-          onClick={() => { resetForm(); setShowForm(true) }}
+          onClick={() => {
+            resetForm()
+            setShowForm(true)
+          }}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
         >
           + New Template
@@ -99,13 +104,10 @@ export function CheckTemplatesPage({ onQuickAudit, onEditTemplate }: Props) {
 
       <div className="space-y-2">
         {checkTemplates.map((template) => (
-          <div
-            key={template.id}
-            className="border border-border rounded-lg p-4 flex items-center justify-between"
-          >
+          <div key={template.id} className="border border-border rounded-lg p-4 flex items-center justify-between">
             <div>
               <button
-                onClick={() => onEditTemplate?.(template.id)}
+                onClick={() => navigate(`/check-templates/${template.id}`)}
                 className="font-medium text-left hover:text-primary transition-colors"
               >
                 {template.name}
@@ -115,25 +117,19 @@ export function CheckTemplatesPage({ onQuickAudit, onEditTemplate }: Props) {
               </p>
               <div className="flex flex-wrap gap-1 mt-1">
                 {template.checks.map((c) => (
-                  <span
-                    key={c.id}
-                    className="inline-block px-2 py-0.5 bg-muted text-xs rounded-md"
-                    title={c.selector}
-                  >
+                  <span key={c.id} className="inline-block px-2 py-0.5 bg-muted text-xs rounded-md" title={c.selector}>
                     {c.label}
                   </span>
                 ))}
               </div>
             </div>
             <div className="flex gap-2 shrink-0">
-              {onQuickAudit && (
-                <button
-                  onClick={() => onQuickAudit(template.id)}
-                  className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:opacity-90 transition-opacity"
-                >
-                  Quick Audit
-                </button>
-              )}
+              <button
+                onClick={() => navigate(`/check-templates/${template.id}/quick-audit`)}
+                className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:opacity-90 transition-opacity"
+              >
+                Quick Audit
+              </button>
               <button
                 onClick={() => openRename(template)}
                 className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
@@ -141,7 +137,7 @@ export function CheckTemplatesPage({ onQuickAudit, onEditTemplate }: Props) {
                 Edit
               </button>
               <button
-                onClick={() => onEditTemplate?.(template.id)}
+                onClick={() => navigate(`/check-templates/${template.id}`)}
                 className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
               >
                 Selectors
