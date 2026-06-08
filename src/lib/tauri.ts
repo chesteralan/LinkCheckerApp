@@ -20,12 +20,12 @@ export const deleteTargetList = (id: string) => invoke<void>('delete_target_list
 
 // Check Templates
 export const listCheckTemplates = () => invoke<CheckTemplate[]>('list_check_templates')
-export const createCheckTemplate = (data: { name: string; checks: { selector: string; label: string }[] }) =>
+export const createCheckTemplate = (data: { name: string; checks: SelectorCheck[] }) =>
   invoke<CheckTemplate>('create_check_template', data)
 export const updateCheckTemplate = (data: {
   id: string
   name?: string
-  checks?: { selector: string; label: string }[]
+  checks?: SelectorCheck[]
 }) => invoke<CheckTemplate>('update_check_template', data)
 export const deleteCheckTemplate = (id: string) => invoke<void>('delete_check_template', { id })
 

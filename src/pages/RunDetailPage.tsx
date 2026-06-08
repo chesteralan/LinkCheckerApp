@@ -41,7 +41,12 @@ export function RunDetailPage() {
     for (const cr of pr.checks) {
       if (!seen.has(cr.selectorCheckId)) {
         seen.add(cr.selectorCheckId)
-        selectors.push({ id: cr.selectorCheckId, selector: cr.selector, label: cr.label })
+        selectors.push({
+          id: cr.selectorCheckId,
+          selector: cr.selector,
+          label: cr.label,
+          checkType: cr.checkType,
+        })
       }
     }
   }
@@ -200,6 +205,7 @@ export function RunDetailPage() {
                       >
                         <span>{cr.found ? '✓' : '✗'}</span>
                         <span>{cr.label}</span>
+                        <span className="opacity-50 text-[10px] uppercase">{cr.checkType}</span>
                         {cr.textContent && <span className="opacity-70">— {cr.textContent}</span>}
                       </span>
                     ))}

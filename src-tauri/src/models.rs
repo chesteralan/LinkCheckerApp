@@ -10,11 +10,28 @@ pub struct TargetList {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum CheckType {
+    #[default]
+    Selector,
+    Status,
+    Regex,
+    Attribute,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SelectorCheck {
     pub id: String,
     pub selector: String,
     pub label: String,
+    #[serde(default)]
+    pub check_type: CheckType,
+    pub expected_status: Option<u16>,
+    pub pattern: Option<String>,
+    pub attribute_name: Option<String>,
+    pub attribute_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +84,8 @@ pub struct SelectorResult {
     pub found: bool,
     pub count: usize,
     pub text_content: Option<String>,
+    #[serde(default)]
+    pub check_type: CheckType,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

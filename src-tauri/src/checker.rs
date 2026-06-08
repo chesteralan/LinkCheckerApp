@@ -149,7 +149,7 @@ async fn check_url(
 
             match response.text().await {
                 Ok(html) => {
-                    let check_results = run_selectors(&html, &checks);
+                    let check_results = run_checks(status_code, &html, &checks);
                     PageResult {
                         page_title: extract_title(&html),
                         url,
@@ -186,43 +186,164 @@ async fn check_url(
     }
 }
 
-fn run_selectors(html: &str, checks: &[SelectorCheck]) -> Vec<SelectorResult> {
-    let document = scraper::Html::parse_document(html);
+fn run_checks(status_code: u16, html: &str, checks: &[SelectorCheck]) -> Vec<SelectorResult> {
     checks
         .iter()
         .map(|check| {
-            let selector = scraper::Selector::parse(&check.selector);
-            match selector {
-                Ok(sel) => {
-                    let matches: Vec<_> = document.select(&sel).collect();
-                    let count = matches.len();
-                    let text_content = matches
-                        .first()
-                        .and_then(|el| {
-                            let text: String = el.text().collect::<Vec<_>>().join(" ");
-                            if text.is_empty() { None } else { Some(text) }
-                        });
-
-                    SelectorResult {
-                        selector_check_id: check.id.clone(),
-                        selector: check.selector.clone(),
-                        label: check.label.clone(),
-                        found: count > 0,
-                        count,
-                        text_content,
-                    }
-                }
-                Err(_) => SelectorResult {
-                    selector_check_id: check.id.clone(),
-                    selector: check.selector.clone(),
-                    label: check.label.clone(),
-                    found: false,
-                    count: 0,
-                    text_content: None,
-                },
+            let check_type = &check.check_type;
+            match check_type {
+                CheckType::Status => run_status_check(check, status_code),
+                CheckType::Regex => run_regex_check(check, html),
+                CheckType::Attribute => run_attribute_check(check, html),
+                CheckType::Selector => run_selector_check(check, html),
             }
         })
         .collect()
+}
+
+fn run_selector_check(check: &SelectorCheck, html: &str) -> SelectorResult {
+    let document = scraper::Html::parse_document(html);
+    match scraper::Selector::parse(&check.selector) {
+        Ok(sel) => {
+            let matches: Vec<_> = document.select(&sel).collect();
+            let count = matches.len();
+            let text_content = matches.first().and_then(|el| {
+                let text: String = el.text().collect::<Vec<_>>().join(" ");
+                if text.is_empty() { None } else { Some(text) }
+            });
+            SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found: count > 0,
+                count,
+                text_content,
+                check_type: CheckType::Selector,
+            }
+        }
+        Err(_) => SelectorResult {
+            selector_check_id: check.id.clone(),
+            selector: check.selector.clone(),
+            label: check.label.clone(),
+            found: false,
+            count: 0,
+            text_content: None,
+            check_type: CheckType::Selector,
+        },
+    }
+}
+
+fn run_status_check(check: &SelectorCheck, status_code: u16) -> SelectorResult {
+    let expected = check.expected_status.unwrap_or(200);
+    let found = status_code == expected;
+    SelectorResult {
+        selector_check_id: check.id.clone(),
+        selector: check.selector.clone(),
+        label: check.label.clone(),
+        found,
+        count: if found { 1 } else { 0 },
+        text_content: Some(format!("HTTP {}", status_code)),
+        check_type: CheckType::Status,
+    }
+}
+
+fn run_regex_check(check: &SelectorCheck, html: &str) -> SelectorResult {
+    let pattern = match &check.pattern {
+        Some(p) if !p.is_empty() => p,
+        _ => {
+            return SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found: false,
+                count: 0,
+                text_content: None,
+                check_type: CheckType::Regex,
+            }
+        }
+    };
+    match ::regex::Regex::new(pattern) {
+        Ok(re) => {
+            let count = re.find_iter(html).count();
+            SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found: count > 0,
+                count,
+                text_content: re.find(html).map(|m| m.as_str().to_string()),
+                check_type: CheckType::Regex,
+            }
+        }
+        Err(e) => SelectorResult {
+            selector_check_id: check.id.clone(),
+            selector: check.selector.clone(),
+            label: check.label.clone(),
+            found: false,
+            count: 0,
+            text_content: Some(format!("invalid regex: {}", e)),
+            check_type: CheckType::Regex,
+        },
+    }
+}
+
+fn run_attribute_check(check: &SelectorCheck, html: &str) -> SelectorResult {
+    let document = scraper::Html::parse_document(html);
+    let attr = match &check.attribute_name {
+        Some(a) if !a.is_empty() => a.clone(),
+        _ => {
+            return SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found: false,
+                count: 0,
+                text_content: None,
+                check_type: CheckType::Attribute,
+            }
+        }
+    };
+    match scraper::Selector::parse(&check.selector) {
+        Ok(sel) => {
+            let mut count = 0usize;
+            let mut texts: Vec<String> = Vec::new();
+            for el in document.select(&sel) {
+                if let Some(val) = el.value().attr(&attr) {
+                    count += 1;
+                    if let Some(ref expected) = check.attribute_value {
+                        if val == expected {
+                            texts.push(format!("{}={}", attr, val));
+                        }
+                    } else {
+                        texts.push(format!("{}={}", attr, val));
+                    }
+                }
+            }
+            let found = if let Some(ref expected) = check.attribute_value {
+                texts.iter().any(|t| t.contains(expected))
+            } else {
+                count > 0
+            };
+            SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found,
+                count,
+                text_content: if texts.is_empty() { None } else { Some(texts.join(", ")) },
+                check_type: CheckType::Attribute,
+            }
+        }
+        Err(_) => SelectorResult {
+            selector_check_id: check.id.clone(),
+            selector: check.selector.clone(),
+            label: check.label.clone(),
+            found: false,
+            count: 0,
+            text_content: None,
+            check_type: CheckType::Attribute,
+        },
+    }
 }
 
 fn extract_title(html: &str) -> Option<String> {
@@ -344,7 +465,7 @@ mod tests {
                 url: "https://a.com".into(),
                 error: None,
                 checks: vec![
-                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: Some("Hi".into()) },
+                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: Some("Hi".into()), check_type: CheckType::Selector },
                 ],
                 response_time_ms: Some(100),
                 page_title: None,
@@ -355,7 +476,7 @@ mod tests {
                 url: "https://b.com".into(),
                 error: None,
                 checks: vec![
-                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: Some("Hi".into()) },
+                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: Some("Hi".into()), check_type: CheckType::Selector },
                 ],
                 response_time_ms: Some(200),
                 page_title: None,
@@ -378,7 +499,7 @@ mod tests {
                 url: "https://a.com".into(),
                 error: None,
                 checks: vec![
-                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: None },
+                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: None, check_type: CheckType::Selector },
                 ],
                 response_time_ms: Some(100),
                 page_title: None,
@@ -389,7 +510,7 @@ mod tests {
                 url: "https://b.com".into(),
                 error: None,
                 checks: vec![
-                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: false, count: 0, text_content: None },
+                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: false, count: 0, text_content: None, check_type: CheckType::Selector },
                 ],
                 response_time_ms: Some(200),
                 page_title: None,
@@ -423,36 +544,118 @@ mod tests {
         assert_eq!(summary.avg_response_time_ms, 0.0);
     }
 
+    fn make_check(id: &str, selector: &str, label: &str) -> SelectorCheck {
+        SelectorCheck {
+            id: id.into(),
+            selector: selector.into(),
+            label: label.into(),
+            check_type: CheckType::Selector,
+            expected_status: None,
+            pattern: None,
+            attribute_name: None,
+            attribute_value: None,
+        }
+    }
+
     #[test]
-    fn test_run_selectors_valid() {
+    fn test_run_checks_valid() {
         let html = "<html><body><h1>Hello</h1><p>World</p></body></html>";
         let checks = vec![
-            SelectorCheck { id: "c1".into(), selector: "h1".into(), label: "Heading".into() },
-            SelectorCheck { id: "c2".into(), selector: "p".into(), label: "Paragraph".into() },
-            SelectorCheck { id: "c3".into(), selector: ".missing".into(), label: "Missing".into() },
+            make_check("c1", "h1", "Heading"),
+            make_check("c2", "p", "Paragraph"),
+            make_check("c3", ".missing", "Missing"),
         ];
-        let results = run_selectors(html, &checks);
+        let results = run_checks(200, html, &checks);
         assert_eq!(results.len(), 3);
-        assert_eq!(results[0].found, true);
+        assert!(results[0].found);
         assert_eq!(results[0].count, 1);
         assert_eq!(results[0].text_content.as_deref(), Some("Hello"));
-        assert_eq!(results[1].found, true);
+        assert!(results[1].found);
         assert_eq!(results[1].count, 1);
         assert_eq!(results[1].text_content.as_deref(), Some("World"));
-        assert_eq!(results[2].found, false);
+        assert!(!results[2].found);
         assert_eq!(results[2].count, 0);
         assert_eq!(results[2].text_content, None);
     }
 
     #[test]
-    fn test_run_selectors_invalid_selector() {
+    fn test_run_checks_invalid_selector() {
         let html = "<html><body></body></html>";
         let checks = vec![
-            SelectorCheck { id: "c1".into(), selector: "[[invalid".into(), label: "Bad".into() },
+            make_check("c1", "[[invalid", "Bad"),
         ];
-        let results = run_selectors(html, &checks);
+        let results = run_checks(200, html, &checks);
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].found, false);
+        assert!(!results[0].found);
+    }
+
+    #[test]
+    fn test_run_checks_status() {
+        let check = SelectorCheck {
+            id: "s1".into(),
+            selector: String::new(),
+            label: "Status 200".into(),
+            check_type: CheckType::Status,
+            expected_status: Some(200),
+            pattern: None,
+            attribute_name: None,
+            attribute_value: None,
+        };
+        let results = run_checks(200, "", &[check]);
+        assert!(results[0].found);
+        assert_eq!(results[0].text_content.as_deref(), Some("HTTP 200"));
+    }
+
+    #[test]
+    fn test_run_checks_regex() {
+        let html = "hello world hello";
+        let check = SelectorCheck {
+            id: "r1".into(),
+            selector: String::new(),
+            label: "Match hello".into(),
+            check_type: CheckType::Regex,
+            expected_status: None,
+            pattern: Some("hello".into()),
+            attribute_name: None,
+            attribute_value: None,
+        };
+        let results = run_checks(200, html, &[check]);
+        assert!(results[0].found);
+        assert_eq!(results[0].count, 2);
+    }
+
+    #[test]
+    fn test_run_checks_regex_invalid() {
+        let check = SelectorCheck {
+            id: "r2".into(),
+            selector: String::new(),
+            label: "Bad regex".into(),
+            check_type: CheckType::Regex,
+            expected_status: None,
+            pattern: Some("[invalid".into()),
+            attribute_name: None,
+            attribute_value: None,
+        };
+        let results = run_checks(200, "", &[check]);
+        assert!(!results[0].found);
+    }
+
+    #[test]
+    fn test_run_checks_attribute() {
+        let html = r#"<img src="logo.png" alt="Logo"><a href="/">Home</a>"#;
+        let check = SelectorCheck {
+            id: "a1".into(),
+            selector: "img".into(),
+            label: "Img alt".into(),
+            check_type: CheckType::Attribute,
+            expected_status: None,
+            pattern: None,
+            attribute_name: Some("alt".into()),
+            attribute_value: Some("Logo".into()),
+        };
+        let results = run_checks(200, html, &[check]);
+        assert!(results[0].found);
+        assert_eq!(results[0].count, 1);
     }
 }
 

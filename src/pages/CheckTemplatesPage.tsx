@@ -117,11 +117,11 @@ export function CheckTemplatesPage() {
                 {template.name}
               </button>
               <p className="text-sm text-muted-foreground">
-                {template.checks.length} selector{template.checks.length !== 1 ? 's' : ''}
+                {template.checks.length} check{template.checks.length !== 1 ? 's' : ''}
               </p>
               <div className="flex flex-wrap gap-1 mt-1">
                 {template.checks.map((c) => (
-                  <span key={c.id} className="inline-block px-2 py-0.5 bg-muted text-xs rounded-md" title={c.selector}>
+                  <span key={c.id} className="inline-block px-2 py-0.5 bg-muted text-xs rounded-md" title={`${c.checkType}: ${c.selector}`}>
                     {c.label}
                   </span>
                 ))}

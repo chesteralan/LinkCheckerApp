@@ -3,13 +3,19 @@ use serde::Deserialize;
 use tauri::State;
 use uuid::Uuid;
 
-use crate::models::{CheckTemplate, SelectorCheck};
+use crate::models::{CheckTemplate, CheckType, SelectorCheck};
 use crate::AppState;
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CheckInput {
     pub selector: String,
     pub label: String,
+    pub check_type: Option<CheckType>,
+    pub expected_status: Option<u16>,
+    pub pattern: Option<String>,
+    pub attribute_name: Option<String>,
+    pub attribute_value: Option<String>,
 }
 
 #[tauri::command]
@@ -34,6 +40,11 @@ pub fn create_check_template(
                 id: Uuid::new_v4().to_string(),
                 selector: c.selector,
                 label: c.label,
+                check_type: c.check_type.unwrap_or_default(),
+                expected_status: c.expected_status,
+                pattern: c.pattern,
+                attribute_name: c.attribute_name,
+                attribute_value: c.attribute_value,
             })
             .collect(),
         created_at: now.clone(),
@@ -72,6 +83,11 @@ pub fn update_check_template(
                 id: Uuid::new_v4().to_string(),
                 selector: c.selector,
                 label: c.label,
+                check_type: c.check_type.unwrap_or_default(),
+                expected_status: c.expected_status,
+                pattern: c.pattern,
+                attribute_name: c.attribute_name,
+                attribute_value: c.attribute_value,
             })
             .collect();
     }

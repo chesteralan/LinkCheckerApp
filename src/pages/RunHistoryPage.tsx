@@ -12,6 +12,7 @@ export function RunHistoryPage() {
   const [page, setPage] = useState(0)
   const [showPrune, setShowPrune] = useState(false)
   const [pruning, setPruning] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     listRunFiles()
@@ -57,6 +58,17 @@ export function RunHistoryPage() {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Run History</h2>
         <div className="flex gap-2">
+          {selected.size === 2 && (
+            <button
+              onClick={() => {
+                const [a, b] = Array.from(selected)
+                navigate(`/history/diff/${a}/${b}`)
+              }}
+              className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md font-medium hover:opacity-90 transition-opacity"
+            >
+              Compare Selected
+            </button>
+          )}
           <button
             onClick={() => setShowPrune(true)}
             className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
@@ -76,6 +88,20 @@ export function RunHistoryPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-muted/50 text-left">
+              <th className="px-4 py-2 font-medium w-10">
+                <input
+                  type="checkbox"
+                  onChange={() => {
+                    if (pageFiles.every((f) => selected.has(f.id))) {
+                      setSelected(new Set())
+                    } else {
+                      setSelected(new Set(pageFiles.map((f) => f.id)))
+                    }
+                  }}
+                  checked={pageFiles.length > 0 && pageFiles.every((f) => selected.has(f.id))}
+                  className="cursor-pointer"
+                />
+              </th>
               <th className="px-4 py-2 font-medium">Date</th>
               <th className="px-4 py-2 font-medium">Type</th>
               <th className="px-4 py-2 font-medium"></th>
@@ -83,7 +109,27 @@ export function RunHistoryPage() {
           </thead>
           <tbody className="divide-y divide-border">
             {pageFiles.map((f) => (
-              <tr key={f.id} className="hover:bg-muted/30">
+              <tr key={f.id} className={`hover:bg-muted/30 ${selected.has(f.id) ? 'bg-primary/5' : ''}`}>
+                <td className="px-4 py-2.5">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(f.id)}
+                    onChange={(e) => {
+                      const next = new Set(selected)
+                      if (e.target.checked) {
+                        if (next.size >= 2) {
+                          const [first] = next
+                          next.delete(first)
+                        }
+                        next.add(f.id)
+                      } else {
+                        next.delete(f.id)
+                      }
+                      setSelected(next)
+                    }}
+                    className="cursor-pointer"
+                  />
+                </td>
                 <td className="px-4 py-2.5 text-muted-foreground">{new Date(f.timestampMs).toLocaleString()}</td>
                 <td className="px-4 py-2.5">Quick Audit</td>
                 <td className="px-4 py-2.5 text-right">

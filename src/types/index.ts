@@ -6,10 +6,17 @@ export interface TargetList {
   updatedAt: string
 }
 
+export type CheckType = 'selector' | 'status' | 'regex' | 'attribute'
+
 export interface SelectorCheck {
   id: string
   selector: string
   label: string
+  checkType: CheckType
+  expectedStatus?: number
+  pattern?: string
+  attributeName?: string
+  attributeValue?: string
 }
 
 export interface CheckTemplate {
@@ -18,6 +25,15 @@ export interface CheckTemplate {
   checks: SelectorCheck[]
   createdAt: string
   updatedAt: string
+}
+
+export function defaultCheck(): SelectorCheck {
+  return {
+    id: crypto.randomUUID?.() ?? Math.random().toString(36).slice(2),
+    selector: '',
+    label: '',
+    checkType: 'selector',
+  }
 }
 
 export interface AuditConfig {
@@ -44,6 +60,7 @@ export interface SelectorResult {
   found: boolean
   count: number
   textContent: string | null
+  checkType: CheckType
 }
 
 export interface PageResult {

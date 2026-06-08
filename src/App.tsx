@@ -10,6 +10,7 @@ import { AuditsPage } from '@/pages/AuditsPage'
 import { AuditDetailPage } from '@/pages/AuditDetailPage'
 import { RunHistoryPage } from '@/pages/RunHistoryPage'
 import { RunDetailPage } from '@/pages/RunDetailPage'
+import { RunDiffPage } from '@/pages/RunDiffPage'
 import { QuickAuditPage } from '@/pages/QuickAuditPage'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useRun } from '@/hooks/useRun'
@@ -126,6 +127,7 @@ function App() {
               <Route path="/audits/:id" element={<AuditDetailPage />} />
               <Route path="/history" element={<RunHistoryPage />} />
               <Route path="/history/:runId" element={<RunDetailPage />} />
+              <Route path="/history/diff/:runIdA/:runIdB" element={<RunDiffPage />} />
             </Routes>
           </ErrorBoundary>
         </main>

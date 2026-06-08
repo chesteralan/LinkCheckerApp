@@ -3,6 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { Modal } from '@/components/Modal'
 import { scrapeSelectors } from '@/lib/tauri'
+import type { SelectorCheck, CheckType } from '@/types'
+import { defaultCheck } from '@/types'
+
+const CHECK_TYPE_OPTIONS: { value: CheckType; label: string }[] = [
+  { value: 'selector', label: 'CSS Selector' },
+  { value: 'status', label: 'HTTP Status' },
+  { value: 'regex', label: 'Regex Match' },
+  { value: 'attribute', label: 'Attribute Check' },
+]
 
 export function CheckTemplateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -28,7 +37,7 @@ export function CheckTemplateDetailPage() {
   const existingSelectors = new Set(checks.map((c) => c.selector))
   const filteredScanResults = scanResults.filter((sr) => !existingSelectors.has(sr.selector))
 
-  function persist(updated: { selector: string; label: string }[]) {
+  function persist(updated: SelectorCheck[]) {
     patchCheckTemplate(t.id, { checks: updated })
   }
 
@@ -51,7 +60,7 @@ export function CheckTemplateDetailPage() {
   }
 
   function addCheck() {
-    persist([...checks, { selector: '', label: '' }])
+    persist([...checks, defaultCheck()])
   }
 
   function removeCheck(index: number) {
@@ -59,7 +68,7 @@ export function CheckTemplateDetailPage() {
     persist(updated)
   }
 
-  function updateCheck(index: number, field: 'selector' | 'label', value: string) {
+  function updateCheck(index: number, field: string, value: string | number | undefined) {
     const updated = [...checks]
     updated[index] = { ...updated[index], [field]: value }
     persist(updated)
@@ -107,7 +116,7 @@ export function CheckTemplateDetailPage() {
         )}
         {checks.map((check, index) => (
           <div
-            key={index}
+            key={check.id}
             className={`border rounded-lg p-4 cursor-grab active:cursor-grabbing ${dragIndex === index ? 'border-primary' : 'border-border'}`}
             draggable
             onDragStart={() => setDragIndex(index)}
@@ -129,52 +138,133 @@ export function CheckTemplateDetailPage() {
             }}
             onDragEnd={() => setDragIndex(null)}
           >
-            <div className="grid grid-cols-[1fr_1fr_auto] gap-3 items-start">
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">Label</label>
-                <input
-                  type="text"
-                  value={check.label}
-                  onChange={(e) => updateCheck(index, 'label', e.target.value)}
-                  placeholder="e.g. Logo"
-                  className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                />
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">
+                {index + 1}
+              </span>
+              <select
+                value={check.checkType}
+                onChange={(e) => {
+                  const ct = e.target.value as CheckType
+                  const updated = [...checks]
+                  updated[index] = { ...defaultCheck(), id: check.id, label: check.label, checkType: ct }
+                  persist(updated)
+                }}
+                className="text-xs border border-border rounded px-2 py-1 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                {CHECK_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-[1fr_auto] gap-3 items-start">
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Label</label>
+                  <input
+                    type="text"
+                    value={check.label}
+                    onChange={(e) => updateCheck(index, 'label', e.target.value)}
+                    placeholder="e.g. Logo Exists"
+                    className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div className="flex gap-1 pt-5">
+                  <button
+                    onClick={() => moveUp(index)}
+                    disabled={index === 0}
+                    className="px-2 py-1.5 text-xs border border-border rounded hover:bg-muted disabled:opacity-30 transition-colors"
+                    title="Move up"
+                  >↑</button>
+                  <button
+                    onClick={() => moveDown(index)}
+                    disabled={index === checks.length - 1}
+                    className="px-2 py-1.5 text-xs border border-border rounded hover:bg-muted disabled:opacity-30 transition-colors"
+                    title="Move down"
+                  >↓</button>
+                  <button
+                    onClick={() => removeCheck(index)}
+                    className="px-2 py-1.5 text-xs border border-destructive text-destructive rounded hover:bg-destructive/10 transition-colors"
+                    title="Remove"
+                  >✕</button>
+                </div>
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">CSS Selector</label>
-                <input
-                  type="text"
-                  value={check.selector}
-                  onChange={(e) => updateCheck(index, 'selector', e.target.value)}
-                  placeholder="e.g. .logo img"
-                  className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div className="flex gap-1 pt-5">
-                <button
-                  onClick={() => moveUp(index)}
-                  disabled={index === 0}
-                  className="px-2 py-1.5 text-xs border border-border rounded hover:bg-muted disabled:opacity-30 transition-colors"
-                  title="Move up"
-                >
-                  ↑
-                </button>
-                <button
-                  onClick={() => moveDown(index)}
-                  disabled={index === checks.length - 1}
-                  className="px-2 py-1.5 text-xs border border-border rounded hover:bg-muted disabled:opacity-30 transition-colors"
-                  title="Move down"
-                >
-                  ↓
-                </button>
-                <button
-                  onClick={() => removeCheck(index)}
-                  className="px-2 py-1.5 text-xs border border-destructive text-destructive rounded hover:bg-destructive/10 transition-colors"
-                  title="Remove"
-                >
-                  ✕
-                </button>
-              </div>
+
+              {check.checkType === 'selector' && (
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">CSS Selector</label>
+                  <input
+                    type="text"
+                    value={check.selector}
+                    onChange={(e) => updateCheck(index, 'selector', e.target.value)}
+                    placeholder="e.g. .logo img"
+                    className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              )}
+
+              {check.checkType === 'status' && (
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Expected HTTP Status</label>
+                  <input
+                    type="number"
+                    value={check.expectedStatus ?? 200}
+                    onChange={(e) => updateCheck(index, 'expectedStatus', parseInt(e.target.value, 10) || 200)}
+                    placeholder="200"
+                    min={100}
+                    max={599}
+                    className="w-32 px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              )}
+
+              {check.checkType === 'regex' && (
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Regex Pattern</label>
+                  <input
+                    type="text"
+                    value={check.pattern ?? ''}
+                    onChange={(e) => updateCheck(index, 'pattern', e.target.value)}
+                    placeholder="e.g. (cancelled|refunded)"
+                    className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              )}
+
+              {check.checkType === 'attribute' && (
+                <div className="grid grid-cols-[1fr_1fr_1fr] gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">CSS Selector</label>
+                    <input
+                      type="text"
+                      value={check.selector}
+                      onChange={(e) => updateCheck(index, 'selector', e.target.value)}
+                      placeholder="e.g. img"
+                      className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">Attribute Name</label>
+                    <input
+                      type="text"
+                      value={check.attributeName ?? ''}
+                      onChange={(e) => updateCheck(index, 'attributeName', e.target.value)}
+                      placeholder="e.g. src"
+                      className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">Expected Value (optional)</label>
+                    <input
+                      type="text"
+                      value={check.attributeValue ?? ''}
+                      onChange={(e) => updateCheck(index, 'attributeValue', e.target.value)}
+                      placeholder="e.g. /logo.png"
+                      className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -184,7 +274,7 @@ export function CheckTemplateDetailPage() {
         onClick={addCheck}
         className="px-4 py-2 border-2 border-dashed border-border rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors w-full"
       >
-        + Add Selector
+        + Add Check
       </button>
 
       <Modal
@@ -265,7 +355,7 @@ export function CheckTemplateDetailPage() {
                         </div>
                         <button
                           onClick={() => {
-                            persist([...checks, { selector: sr.selector, label: sr.selector }])
+                            persist([...checks, { ...defaultCheck(), selector: sr.selector, label: sr.selector }])
                             setScanResults((prev) => prev.filter((p) => p.selector !== sr.selector))
                           }}
                           className="text-xs text-primary hover:underline shrink-0"

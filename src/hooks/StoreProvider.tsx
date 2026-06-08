@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import * as api from '@/lib/tauri'
-import type { TargetList, CheckTemplate, Audit } from '@/types'
+import type { TargetList, CheckTemplate, Audit, SelectorCheck } from '@/types'
 import { StoreContext } from './StoreContext'
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -51,14 +51,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setTargetLists((prev) => prev.filter((tl) => tl.id !== id))
   }, [])
 
-  const createCheckTemplate = useCallback(async (name: string, checks: { selector: string; label: string }[]) => {
+  const createCheckTemplate = useCallback(async (name: string, checks: SelectorCheck[]) => {
     const created = await api.createCheckTemplate({ name, checks })
     setCheckTemplates((prev) => [...prev, created])
     return created
   }, [])
 
   const updateCheckTemplate = useCallback(
-    async (id: string, data: { name?: string; checks?: { selector: string; label: string }[] }) => {
+    async (id: string, data: { name?: string; checks?: SelectorCheck[] }) => {
       const updated = await api.updateCheckTemplate({ id, ...data })
       setCheckTemplates((prev) => prev.map((ct) => (ct.id === id ? updated : ct)))
       return updated
@@ -67,15 +67,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const patchCheckTemplate = useCallback(
-    (id: string, data: { name?: string; checks?: { selector: string; label: string }[] }) => {
+    (id: string, data: { name?: string; checks?: SelectorCheck[] }) => {
       setCheckTemplates((prev) =>
         prev.map((ct) => {
           if (ct.id !== id) return ct
           const checks =
             data.checks?.map((c, i) => ({
-              id: ct.checks[i]?.id ?? crypto.randomUUID(),
-              selector: c.selector,
-              label: c.label,
+              ...c,
+              id: ct.checks[i]?.id ?? c.id,
             })) ?? ct.checks
           return { ...ct, checks, updatedAt: new Date().toISOString() }
         }),
