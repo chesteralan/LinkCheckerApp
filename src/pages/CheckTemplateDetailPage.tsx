@@ -21,7 +21,7 @@ export function CheckTemplateDetailPage() {
   const checks = template?.checks ?? []
 
   const [showScanModal, setShowScanModal] = useState(false)
-  const [scanUrl, setScanUrl] = useState('')
+  const [scanUrls, setScanUrls] = useState('')
   const [scanIds, setScanIds] = useState(true)
   const [scanClasses, setScanClasses] = useState(true)
   const [scanTestids, setScanTestids] = useState(true)
@@ -75,11 +75,12 @@ export function CheckTemplateDetailPage() {
   }
 
   async function handleScan() {
-    if (!scanUrl.trim()) return
+    const urls = scanUrls.split('\n').map((u) => u.trim()).filter(Boolean)
+    if (urls.length === 0) return
     setScanning(true)
     setScanResults([])
     try {
-      const results = await scrapeSelectors(scanUrl, {
+      const results = await scrapeSelectors(urls, {
         selectIds: scanIds,
         selectClasses: scanClasses,
         selectTestids: scanTestids,
@@ -287,13 +288,12 @@ export function CheckTemplateDetailPage() {
       >
         <div className="space-y-4">
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">Page URL</label>
-            <input
-              type="text"
-              placeholder="https://example.com"
-              value={scanUrl}
-              onChange={(e) => setScanUrl(e.target.value)}
-              autoFocus
+            <label className="text-sm text-muted-foreground block mb-1">Page URLs (one per line)</label>
+            <textarea
+              placeholder="https://example.com&#10;https://example.org"
+              value={scanUrls}
+              onChange={(e) => setScanUrls(e.target.value)}
+              rows={3}
               className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
@@ -323,7 +323,7 @@ export function CheckTemplateDetailPage() {
           </div>
           <button
             onClick={handleScan}
-            disabled={!scanUrl.trim() || scanning}
+            disabled={!scanUrls.trim() || scanning}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {scanning ? 'Scanning...' : 'Scan'}

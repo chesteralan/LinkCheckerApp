@@ -28,6 +28,7 @@ const SHORTCUTS = [
   { key: 'Escape', action: 'Close modal / Cancel' },
   { key: 'Cmd+Enter', action: 'Submit form' },
   { key: '?', action: 'Toggle this shortcut reference' },
+  { key: '⌘K', action: 'Focus global search' },
 ]
 
 function App() {

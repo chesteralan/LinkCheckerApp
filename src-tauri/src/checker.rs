@@ -43,11 +43,22 @@ impl Checker {
             _ => Arc::new(Semaphore::new(audit.config.batch_size as usize)),
         };
 
-        let client = reqwest::Client::builder()
+        let mut client_builder = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(audit.config.timeout_secs))
-            .redirect(reqwest::redirect::Policy::limited(10))
-            .build()
-            .expect("failed to build HTTP client");
+            .redirect(reqwest::redirect::Policy::limited(10));
+        if !audit.config.headers.is_empty() {
+            let mut headers = reqwest::header::HeaderMap::new();
+            for (key, value) in &audit.config.headers {
+                if let (Ok(k), Ok(v)) = (
+                    reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                    reqwest::header::HeaderValue::from_str(value),
+                ) {
+                    headers.insert(k, v);
+                }
+            }
+            client_builder = client_builder.default_headers(headers);
+        }
+        let client = client_builder.build().expect("failed to build HTTP client");
 
         let results = Arc::new(std::sync::Mutex::new(Vec::with_capacity(total)));
         let checked = Arc::new(std::sync::Mutex::new(0usize));

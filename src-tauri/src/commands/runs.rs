@@ -1,7 +1,10 @@
+use std::collections::HashMap;
 use std::collections::BTreeSet;
 use std::fs;
+use std::sync::Arc;
 use serde::Deserialize;
 use tauri::{AppHandle, State};
+use tokio::sync::Semaphore;
 
 use crate::models::*;
 use crate::AppState;
@@ -12,6 +15,8 @@ pub struct QuickRunConfig {
     pub mode: String,
     pub batch_size: u32,
     pub timeout_secs: u64,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -43,7 +48,7 @@ pub async fn scrape_links(url: String) -> Result<Vec<String>, String> {
     Ok(links)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ScrapeSelectorsOptions {
     pub select_ids: bool,
@@ -53,17 +58,50 @@ pub struct ScrapeSelectorsOptions {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn scrape_selectors(url: String, options: ScrapeSelectorsOptions) -> Result<Vec<ScrapedSelector>, String> {
+pub async fn scrape_selectors(urls: Vec<String>, options: ScrapeSelectorsOptions) -> Result<Vec<ScrapedSelector>, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .map_err(|e| e.to_string())?;
 
+    let semaphore = Arc::new(Semaphore::new(5));
+    let mut handles = Vec::new();
+
+    for url in urls {
+        let client = client.clone();
+        let options = options.clone();
+        let permit = semaphore.clone().acquire_owned().await.map_err(|e| e.to_string())?;
+
+        handles.push(tokio::spawn(async move {
+            let _permit = permit;
+            scrape_single(client, url, options).await
+        }));
+    }
+
+    let mut all_results = BTreeSet::new();
+    for handle in handles {
+        if let Ok(Ok(results)) = handle.await {
+            for r in results {
+                all_results.insert(r.selector);
+            }
+        }
+    }
+
+    Ok(all_results.into_iter().map(|selector| {
+        let type_name = if selector.starts_with('#') { "id".into() }
+            else if selector.starts_with('.') { "class".into() }
+            else if selector.contains("data-testid") { "data-testid".into() }
+            else { "custom".into() };
+        ScrapedSelector { selector, type_name }
+    }).collect())
+}
+
+async fn scrape_single(client: reqwest::Client, url: String, options: ScrapeSelectorsOptions) -> Result<Vec<ScrapedSelector>, String> {
     let html = client.get(&url).send().await
-        .map_err(|e| format!("Failed to fetch URL: {}", e))?
+        .map_err(|e| format!("Failed to fetch {}: {}", url, e))?
         .text().await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
+        .map_err(|e| format!("Failed to read {}: {}", url, e))?;
 
     let document = scraper::Html::parse_document(&html);
     let mut results = BTreeSet::new();
@@ -139,6 +177,7 @@ pub async fn quick_run(
             mode: config.mode,
             batch_size: config.batch_size,
             timeout_secs: config.timeout_secs,
+            headers: config.headers,
         },
         origin_override: origin_override.filter(|o| !o.is_empty()),
         url_postfix: url_postfix.filter(|p| !p.is_empty()),

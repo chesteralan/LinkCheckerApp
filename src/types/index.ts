@@ -40,6 +40,7 @@ export interface AuditConfig {
   mode: 'sequential' | 'batch'
   batchSize: number
   timeoutSecs: number
+  headers: Record<string, string>
 }
 
 export interface Audit {

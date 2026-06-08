@@ -56,7 +56,7 @@
 - [x] **Pagination / lazy-load** — Load run history in pages instead of all at once
 - [x] **Result pruning** — Configurable retention policy (auto-delete runs older than N days)
 - [ ] **Large-file streaming** — Stream run results to disk instead of holding all in memory
-- [ ] **Concurrent URL scrape** — Scrape selectors from multiple pages at once (currently one-at-a-time)
+- [x] **Concurrent URL scrape** — Scrape selectors from multiple pages at once
 - [ ] **Incremental data save** — Save results incrementally during a run (recovery on crash)
 
 ## Phase 8 — Run Comparison & Diff ⬜
@@ -69,14 +69,14 @@
 - [x] **Attribute checks** — Verify an element has a specific attribute or attribute value (e.g., `href`, `alt`)
 - [ ] **Broken link crawling** — Follow all `<a href>` on a page and report 4xx/5xx (recursive depth limit)
 - [x] **Page status checks** — Assert expected HTTP status code or range (e.g., must be 2xx)
-- [ ] **Custom HTTP headers** — Per-audit request headers (e.g., `Authorization`, `Accept-Language`)
+- [x] **Custom HTTP headers** — Per-audit request headers (e.g., `Authorization`, `Accept-Language`)
 - [ ] **Cookie / session support** — Set cookies or run a login flow before executing checks
 - [ ] **JavaScript evaluation** — Run a JS snippet in a headless context and assert the result
 - [ ] **Accessibility checks** — Scan for missing alt text, low contrast, missing ARIA labels (via axe-core or similar)
 
 ## Phase 10 — Structure & Organization ⬜
 - [ ] **Folders / tags** — Group audits, templates, and target lists into folders or tag them for filtering
-- [ ] **Search** — Global search across audits, templates, target lists, and run history
+- [x] **Search** — Global search across audits, templates, target lists, and run history
 - [ ] **Favorites / pins** — Pin frequently used templates and audits to the top
 - [ ] **Bulk operations** — Multi-select and delete/duplicate/export templates, lists, or audits
 - [ ] **Templates from run** — Create a check template from selectors discovered during a scrape

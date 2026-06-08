@@ -50,6 +50,8 @@ pub struct AuditConfig {
     pub mode: String,
     pub batch_size: u32,
     pub timeout_secs: u64,
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub headers: std::collections::HashMap<String, String>,
 }
 
 impl Default for AuditConfig {
@@ -58,6 +60,7 @@ impl Default for AuditConfig {
             mode: "batch".into(),
             batch_size: 5,
             timeout_secs: 10,
+            headers: std::collections::HashMap::new(),
         }
     }
 }

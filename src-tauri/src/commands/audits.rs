@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use chrono::Utc;
 use serde::Deserialize;
 use tauri::State;
@@ -12,6 +13,8 @@ pub struct AuditConfigInput {
     pub mode: String,
     pub batch_size: u32,
     pub timeout_secs: u64,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
 }
 
 #[tauri::command]
@@ -39,6 +42,7 @@ pub fn create_audit(
             mode: config.mode,
             batch_size: config.batch_size,
             timeout_secs: config.timeout_secs,
+            headers: config.headers,
         },
         origin_override: origin_override.filter(|o| !o.is_empty()),
         url_postfix: url_postfix.filter(|p| !p.is_empty()),
@@ -77,6 +81,7 @@ pub fn update_audit(
             mode: config.mode,
             batch_size: config.batch_size,
             timeout_secs: config.timeout_secs,
+            headers: config.headers,
         };
     }
     if let Some(oo) = origin_override {

@@ -26,6 +26,9 @@ export function AuditDetailPage() {
   const [editMode, setEditMode] = useState<'sequential' | 'batch'>(audit?.config.mode ?? 'batch')
   const [editBatchSize, setEditBatchSize] = useState(audit?.config.batchSize ?? 5)
   const [editTimeoutSecs, setEditTimeoutSecs] = useState(audit?.config.timeoutSecs ?? 10)
+  const [editHeaders, setEditHeaders] = useState<Record<string, string>>(audit?.config.headers ?? {})
+  const [editHeaderKey, setEditHeaderKey] = useState('')
+  const [editHeaderVal, setEditHeaderVal] = useState('')
   const [editOriginOverride, setEditOriginOverride] = useState(audit?.originOverride ?? '')
   const [editUrlPostfix, setEditUrlPostfix] = useState(audit?.urlPostfix ?? '')
   const [originOverride, setOriginOverride] = useState(audit?.originOverride ?? '')
@@ -78,6 +81,7 @@ export function AuditDetailPage() {
     setEditMode(a.config.mode)
     setEditBatchSize(a.config.batchSize)
     setEditTimeoutSecs(a.config.timeoutSecs)
+    setEditHeaders(a.config.headers ?? {})
     setEditOriginOverride(a.originOverride ?? '')
     setEditUrlPostfix(a.urlPostfix ?? '')
     setEditing(true)
@@ -87,7 +91,7 @@ export function AuditDetailPage() {
     if (!editName.trim()) return
     await updateAudit(a.id, {
       name: editName,
-      config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs },
+      config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs, headers: editHeaders },
       originOverride: editOriginOverride,
       urlPostfix: editUrlPostfix,
     })
@@ -322,8 +326,61 @@ export function AuditDetailPage() {
                     className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
                   />
                 </div>
+                </div>
+                <div className="col-span-3 border border-border rounded-lg p-3">
+                  <details className="text-sm">
+                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground font-medium">
+                      Custom Headers {Object.keys(editHeaders).length > 0 && `(${Object.keys(editHeaders).length})`}
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      {Object.entries(editHeaders).map(([k, v]) => (
+                        <div key={k} className="flex items-center gap-2 text-xs font-mono">
+                          <span className="text-primary">{k}</span>
+                          <span className="text-muted-foreground">:</span>
+                          <span className="flex-1 truncate">{v}</span>
+                          <button
+                            onClick={() => {
+                              const next = { ...editHeaders }
+                              delete next[k]
+                              setEditHeaders(next)
+                            }}
+                            className="text-destructive hover:underline shrink-0"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Header-Name"
+                          value={editHeaderKey}
+                          onChange={(e) => setEditHeaderKey(e.target.value)}
+                          className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Value"
+                          value={editHeaderVal}
+                          onChange={(e) => setEditHeaderVal(e.target.value)}
+                          className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <button
+                          onClick={() => {
+                            if (!editHeaderKey.trim()) return
+                            setEditHeaders((prev) => ({ ...prev, [editHeaderKey.trim()]: editHeaderVal }))
+                            setEditHeaderKey('')
+                            setEditHeaderVal('')
+                          }}
+                          className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs font-medium hover:opacity-90 transition-opacity shrink-0"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  </details>
+                </div>
               </div>
-            </div>
           ) : (
             <>
               {tl && (

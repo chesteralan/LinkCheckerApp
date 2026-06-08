@@ -35,14 +35,14 @@ export const createAudit = (data: {
   name: string
   targetListId: string
   checkTemplateId: string
-  config: { mode: string; batchSize: number; timeoutSecs: number }
+  config: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string> }
   originOverride?: string
   urlPostfix?: string
 }) => invoke<Audit>('create_audit', data)
 export const updateAudit = (data: {
   id: string
   name?: string
-  config?: { mode: string; batchSize: number; timeoutSecs: number }
+  config?: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string> }
   originOverride?: string
   urlPostfix?: string
 }) => invoke<Audit>('update_audit', data)
@@ -52,9 +52,9 @@ export const deleteAudit = (id: string) => invoke<void>('delete_audit', { id })
 export const scrapeLinks = (url: string) => invoke<string[]>('scrape_links', { url })
 
 export const scrapeSelectors = (
-  url: string,
+  urls: string[],
   options: { selectIds: boolean; selectClasses: boolean; selectTestids: boolean; customSelector: string },
-) => invoke<{ selector: string; typeName: string }[]>('scrape_selectors', { url, options })
+) => invoke<{ selector: string; typeName: string }[]>('scrape_selectors', { urls, options })
 
 // File I/O
 export const writeFile = (path: string, content: string) => invoke<void>('write_file', { path, content })
@@ -64,7 +64,7 @@ export const readFile = (path: string) => invoke<string>('read_file', { path })
 export const runQuickAudit = (data: {
   urls: string[]
   checks: SelectorCheck[]
-  config: { mode: string; batchSize: number; timeoutSecs: number }
+  config: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string> }
   originOverride?: string
   urlPostfix?: string
 }) => invoke<void>('quick_run', data)

@@ -15,7 +15,7 @@ export interface RunContextValue extends RunnerState {
   startQuick: (
     urls: string[],
     checks: SelectorCheck[],
-    config: { mode: string; batchSize: number; timeoutSecs: number },
+    config: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string> },
     originOverride?: string,
     urlPostfix?: string,
     returnPath?: string,
@@ -118,7 +118,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
     async (
       urls: string[],
       checks: SelectorCheck[],
-      config: { mode: string; batchSize: number; timeoutSecs: number },
+      config: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string> },
       originOverride?: string,
       urlPostfix?: string,
       returnPath?: string,
