@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { findDuplicateTemplates } from '@/utils/detectDuplicates'
 
 export function CheckTemplatesPage() {
   const navigate = useNavigate()
   const { checkTemplates, loading, createCheckTemplate, updateCheckTemplate, deleteCheckTemplate } = useStore()
+  const duplicateTemplates = useMemo(() => findDuplicateTemplates(checkTemplates), [checkTemplates])
   const [name, setName] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingRename, setEditingRename] = useState<{ id: string; name: string } | null>(null)
@@ -126,6 +128,11 @@ export function CheckTemplatesPage() {
                 </button>
                 <p className="text-sm text-muted-foreground">
                   {template.checks.length} check{template.checks.length !== 1 ? 's' : ''}
+                  {duplicateTemplates.has(template.id) && (
+                    <span className="ml-2 text-xs text-warning" title={`Duplicate of ${duplicateTemplates.get(template.id)?.length} other template${duplicateTemplates.get(template.id)?.length !== 1 ? 's' : ''}`}>
+                      ⚠ Duplicate
+                    </span>
+                  )}
                 </p>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {template.checks.map((c) => (

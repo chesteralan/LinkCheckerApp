@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
@@ -8,11 +8,13 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import type { TargetList } from '@/types'
 import { normalizeUrl, readFile, scrapeLinks } from '@/lib/tauri'
 import { resolveUrl } from '@/utils/resolveUrl'
+import { findDuplicateLists } from '@/utils/detectDuplicates'
 
 export function TargetListsPage() {
   const navigate = useNavigate()
   const { targetLists, audits, checkTemplates, loading, createTargetList, updateTargetList, deleteTargetList } =
     useStore()
+  const duplicateLists = useMemo(() => findDuplicateLists(targetLists), [targetLists])
   const [editing, setEditing] = useState<TargetList | null>(null)
   const [name, setName] = useState('')
   const [urlsText, setUrlsText] = useState('')
@@ -236,6 +238,11 @@ export function TargetListsPage() {
                 <h3 className="font-medium">{list.name}</h3>
                 <p className="text-sm text-muted-foreground">
                   {list.urls.length} URL{list.urls.length !== 1 ? 's' : ''}
+                  {duplicateLists.has(list.id) && (
+                    <span className="ml-2 text-xs text-warning" title={`Duplicate of ${duplicateLists.get(list.id)?.length} other list${duplicateLists.get(list.id)?.length !== 1 ? 's' : ''}`}>
+                      ⚠ Duplicate
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
