@@ -16,6 +16,8 @@ pub struct QuickRunConfig {
     pub timeout_secs: u64,
     #[serde(default)]
     pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub cookies: Vec<KeyValuePair>,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -177,6 +179,7 @@ pub async fn quick_run(
             batch_size: config.batch_size,
             timeout_secs: config.timeout_secs,
             headers: config.headers,
+            cookies: config.cookies,
         },
         origin_override: origin_override.filter(|o| !o.is_empty()),
         url_postfix: url_postfix.filter(|p| !p.is_empty()),

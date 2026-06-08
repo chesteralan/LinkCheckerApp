@@ -15,6 +15,8 @@ pub struct AuditConfigInput {
     pub timeout_secs: u64,
     #[serde(default)]
     pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub cookies: Vec<crate::models::KeyValuePair>,
 }
 
 #[tauri::command]
@@ -46,6 +48,7 @@ pub fn create_audit(
             batch_size: config.batch_size,
             timeout_secs: config.timeout_secs,
             headers: config.headers,
+            cookies: config.cookies,
         },
         origin_override: origin_override.filter(|o| !o.is_empty()),
         url_postfix: url_postfix.filter(|p| !p.is_empty()),
@@ -91,6 +94,7 @@ pub fn update_audit(
             batch_size: config.batch_size,
             timeout_secs: config.timeout_secs,
             headers: config.headers,
+            cookies: config.cookies,
         };
     }
     if let Some(oo) = origin_override {

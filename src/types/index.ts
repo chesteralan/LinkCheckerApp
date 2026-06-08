@@ -41,10 +41,11 @@ export function defaultCheck(): SelectorCheck {
 }
 
 export interface AuditConfig {
-  mode: 'sequential' | 'batch'
+  mode: string
   batchSize: number
   timeoutSecs: number
   headers: Record<string, string>
+  cookies: { key: string; value: string }[]
 }
 
 export interface Audit {

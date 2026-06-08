@@ -59,6 +59,23 @@ impl Checker {
             }
             client_builder = client_builder.default_headers(headers);
         }
+        if !audit.config.cookies.is_empty() {
+            let cookie_str: String = audit
+                .config
+                .cookies
+                .iter()
+                .map(|kv| format!("{}={}", kv.key, kv.value))
+                .collect::<Vec<_>>()
+                .join("; ");
+            if let Ok(v) = reqwest::header::HeaderValue::from_str(&cookie_str) {
+                client_builder = client_builder.default_headers(
+                    reqwest::header::HeaderMap::from_iter([(
+                        reqwest::header::COOKIE,
+                        v,
+                    )]),
+                );
+            }
+        }
         let client = client_builder.build().expect("failed to build HTTP client");
 
         let results = Arc::new(std::sync::Mutex::new(Vec::with_capacity(total)));

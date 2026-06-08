@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,8 +57,16 @@ pub struct AuditConfig {
     pub mode: String,
     pub batch_size: u32,
     pub timeout_secs: u64,
-    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
-    pub headers: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub cookies: Vec<KeyValuePair>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyValuePair {
+    pub key: String,
+    pub value: String,
 }
 
 impl Default for AuditConfig {
@@ -66,7 +75,8 @@ impl Default for AuditConfig {
             mode: "batch".into(),
             batch_size: 5,
             timeout_secs: 10,
-            headers: std::collections::HashMap::new(),
+            headers: HashMap::new(),
+            cookies: Vec::new(),
         }
     }
 }

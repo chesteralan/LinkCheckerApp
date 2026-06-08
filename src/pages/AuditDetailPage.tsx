@@ -30,6 +30,9 @@ export function AuditDetailPage() {
   const [editHeaders, setEditHeaders] = useState<Record<string, string>>(audit?.config.headers ?? {})
   const [editHeaderKey, setEditHeaderKey] = useState('')
   const [editHeaderVal, setEditHeaderVal] = useState('')
+  const [editCookies, setEditCookies] = useState<{ key: string; value: string }[]>(audit?.config.cookies ?? [])
+  const [editCookieKey, setEditCookieKey] = useState('')
+  const [editCookieVal, setEditCookieVal] = useState('')
   const [editOriginOverride, setEditOriginOverride] = useState(audit?.originOverride ?? '')
   const [editUrlPostfix, setEditUrlPostfix] = useState(audit?.urlPostfix ?? '')
   const [originOverride, setOriginOverride] = useState(audit?.originOverride ?? '')
@@ -92,7 +95,7 @@ export function AuditDetailPage() {
     if (!editName.trim()) return
     await updateAudit(a.id, {
       name: editName,
-      config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs, headers: editHeaders },
+      config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs, headers: editHeaders, cookies: editCookies },
       originOverride: editOriginOverride,
       urlPostfix: editUrlPostfix,
     })
@@ -389,9 +392,58 @@ export function AuditDetailPage() {
                         </button>
                       </div>
                     </div>
-                  </details>
+                    </details>
+                  </div>
+                  <div className="col-span-3 border border-border rounded-lg p-3">
+                    <details className="text-sm">
+                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground font-medium">
+                        Cookies {editCookies.length > 0 && `(${editCookies.length})`}
+                      </summary>
+                      <div className="mt-3 space-y-2">
+                        {editCookies.map((c, i) => (
+                          <div key={i} className="flex items-center gap-2 text-xs font-mono">
+                            <span className="text-primary">{c.key}</span>
+                            <span className="text-muted-foreground">=</span>
+                            <span className="flex-1 truncate">{c.value}</span>
+                            <button
+                              onClick={() => setEditCookies((prev) => prev.filter((_, j) => j !== i))}
+                              className="text-destructive hover:underline shrink-0"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Name"
+                            value={editCookieKey}
+                            onChange={(e) => setEditCookieKey(e.target.value)}
+                            className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Value"
+                            value={editCookieVal}
+                            onChange={(e) => setEditCookieVal(e.target.value)}
+                            className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                          <button
+                            onClick={() => {
+                              if (!editCookieKey.trim()) return
+                              setEditCookies((prev) => [...prev, { key: editCookieKey.trim(), value: editCookieVal }])
+                              setEditCookieKey('')
+                              setEditCookieVal('')
+                            }}
+                            className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs font-medium hover:opacity-90 transition-opacity shrink-0"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
                 </div>
-              </div>
           ) : (
             <>
               {tl && (

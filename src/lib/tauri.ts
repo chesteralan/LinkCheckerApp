@@ -37,7 +37,7 @@ export const createAudit = (data: {
   name: string
   targetListId: string
   checkTemplateId: string
-  config: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string> }
+  config: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string>; cookies?: { key: string; value: string }[] }
   originOverride?: string
   urlPostfix?: string
   pinned?: boolean
@@ -46,7 +46,7 @@ export const createAudit = (data: {
 export const updateAudit = (data: {
   id: string
   name?: string
-  config?: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string> }
+  config?: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string>; cookies?: { key: string; value: string }[] }
   originOverride?: string
   urlPostfix?: string
   pinned?: boolean
@@ -71,7 +71,7 @@ export const readFile = (path: string) => invoke<string>('read_file', { path })
 export const runQuickAudit = (data: {
   urls: string[]
   checks: SelectorCheck[]
-  config: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string> }
+  config: { mode: string; batchSize: number; timeoutSecs: number; headers?: Record<string, string>; cookies?: { key: string; value: string }[] }
   originOverride?: string
   urlPostfix?: string
 }) => invoke<void>('quick_run', data)
