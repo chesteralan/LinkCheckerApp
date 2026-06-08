@@ -1,10 +1,11 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Semaphore;
 
 use crate::models::*;
+use crate::AppState;
 
 pub struct Checker {
     cancel_flag: Arc<AtomicBool>,
@@ -79,6 +80,9 @@ impl Checker {
             let results = results.clone();
             let checked = checked.clone();
             let app = app.clone();
+            let run_id = run_id.clone();
+            let audit_id = audit.id.clone();
+            let started_at = started_at.clone();
 
             fetches.push(tokio::spawn(async move {
                 let _permit = permit;
@@ -93,6 +97,19 @@ impl Checker {
                     "total": total,
                 }));
                 let _ = app.emit("run:result", &page_result);
+
+                let partial = AuditRun {
+                    id: run_id.clone(),
+                    audit_id: audit_id.clone(),
+                    started_at: started_at.clone(),
+                    completed_at: None,
+                    status: "running".into(),
+                    results: results.clone(),
+                    summary: compute_summary(&results),
+                };
+                if let Some(state) = app.try_state::<AppState>() {
+                    let _ = state.storage.save_run(&partial);
+                }
             }));
         }
 
