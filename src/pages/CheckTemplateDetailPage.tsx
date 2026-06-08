@@ -19,6 +19,7 @@ export function CheckTemplateDetailPage() {
   const [scanCustom, setScanCustom] = useState('')
   const [scanning, setScanning] = useState(false)
   const [scanResults, setScanResults] = useState<{ selector: string; typeName: string }[]>([])
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
 
   if (!template) {
     return <div className="text-muted-foreground">Template not found.</div>
@@ -31,22 +32,22 @@ export function CheckTemplateDetailPage() {
     patchCheckTemplate(t.id, { checks: updated })
   }
 
+  function moveCheck(from: number, to: number) {
+    if (to < 0 || to >= checks.length) return
+    const updated = [...checks]
+    const [moved] = updated.splice(from, 1)
+    updated.splice(to, 0, moved)
+    persist(updated)
+  }
+
   function moveUp(index: number) {
     if (index === 0) return
-    const updated = [...checks]
-    const tmp = updated[index - 1]
-    updated[index - 1] = updated[index]
-    updated[index] = tmp
-    persist(updated)
+    moveCheck(index, index - 1)
   }
 
   function moveDown(index: number) {
     if (index === checks.length - 1) return
-    const updated = [...checks]
-    const tmp = updated[index + 1]
-    updated[index + 1] = updated[index]
-    updated[index] = tmp
-    persist(updated)
+    moveCheck(index, index + 1)
   }
 
   function addCheck() {
@@ -105,7 +106,29 @@ export function CheckTemplateDetailPage() {
           <p className="text-muted-foreground text-sm">No selectors yet. Add one or scan a page.</p>
         )}
         {checks.map((check, index) => (
-          <div key={index} className="border border-border rounded-lg p-4">
+          <div
+            key={index}
+            className={`border rounded-lg p-4 cursor-grab active:cursor-grabbing ${dragIndex === index ? 'border-primary' : 'border-border'}`}
+            draggable
+            onDragStart={() => setDragIndex(index)}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+            }}
+            onDragEnter={() => {
+              if (dragIndex !== null && dragIndex !== index) {
+                setDragIndex(index)
+              }
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              if (dragIndex !== null && dragIndex !== index) {
+                moveCheck(dragIndex, index)
+              }
+              setDragIndex(null)
+            }}
+            onDragEnd={() => setDragIndex(null)}
+          >
             <div className="grid grid-cols-[1fr_1fr_auto] gap-3 items-start">
               <div>
                 <label className="text-xs text-muted-foreground block mb-1">Label</label>

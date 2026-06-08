@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import type { TargetList } from '@/types'
 import { normalizeUrl, readFile, scrapeLinks } from '@/lib/tauri'
 import { resolveUrl } from '@/utils/resolveUrl'
@@ -20,6 +21,15 @@ export function TargetListsPage() {
   const [scrapeUrl, setScrapeUrl] = useState('')
   const [scraping, setScraping] = useState(false)
   const [auditModalList, setAuditModalList] = useState<TargetList | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<TargetList | null>(null)
+
+  const urlLines = urlsText.split('\n').map((u) => u.trim()).filter(Boolean)
+  const invalidUrls = urlLines.filter((u) => u && !/^https?:\/\/[^\s]+/.test(u))
+  const urlCounts = urlLines.reduce<Record<string, number>>((acc, u) => {
+    acc[u] = (acc[u] || 0) + 1
+    return acc
+  }, {})
+  const duplicateUrls = urlLines.filter((u) => urlCounts[u] > 1)
 
   function resetForm() {
     setName('')
@@ -49,8 +59,10 @@ export function TargetListsPage() {
     resetForm()
   }
 
-  async function handleDelete(id: string) {
-    await deleteTargetList(id)
+  async function handleDeleteConfirm() {
+    if (!confirmDelete) return
+    await deleteTargetList(confirmDelete.id)
+    setConfirmDelete(null)
   }
 
   useHotkeys(
@@ -173,11 +185,24 @@ export function TargetListsPage() {
               rows={6}
               className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
             />
+            {invalidUrls.length > 0 && (
+              <p className="text-xs text-destructive mt-1">
+                {invalidUrls.length} invalid URL{invalidUrls.length !== 1 ? 's' : ''} (must start with http:// or https://)
+              </p>
+            )}
+            {duplicateUrls.length > 0 && (
+              <p className="text-xs text-warning mt-1">
+                {duplicateUrls.length} duplicate{duplicateUrls.length !== 1 ? 's' : ''} found
+              </p>
+            )}
+            {urlLines.length > 0 && invalidUrls.length === 0 && (
+              <p className="text-xs text-muted-foreground mt-1">{urlLines.length} URL{urlLines.length !== 1 ? 's' : ''}</p>
+            )}
           </div>
           <div className="flex gap-2">
             <button
               onClick={handleSave}
-              disabled={!name.trim()}
+              disabled={!name.trim() || (urlLines.length > 0 && invalidUrls.length > 0)}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               {editing ? 'Update' : 'Create'}
@@ -219,7 +244,7 @@ export function TargetListsPage() {
                 Edit
               </button>
               <button
-                onClick={() => handleDelete(list.id)}
+                onClick={() => setConfirmDelete(list)}
                 className="px-3 py-1.5 text-sm border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
               >
                 Delete
@@ -268,6 +293,13 @@ export function TargetListsPage() {
             )
           })()}
       </Modal>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        message={`Delete target list "${confirmDelete?.name ?? ''}"? This action cannot be undone.`}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   )
 }

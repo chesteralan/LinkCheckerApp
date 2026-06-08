@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 
 export function CheckTemplatesPage() {
   const navigate = useNavigate()
@@ -10,6 +11,7 @@ export function CheckTemplatesPage() {
   const [name, setName] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingRename, setEditingRename] = useState<{ id: string; name: string } | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   function resetForm() {
     setName('')
@@ -35,8 +37,10 @@ export function CheckTemplatesPage() {
     }
   }
 
-  async function handleDelete(id: string) {
-    await deleteCheckTemplate(id)
+  async function handleDeleteConfirm() {
+    if (!confirmDeleteId) return
+    await deleteCheckTemplate(confirmDeleteId)
+    setConfirmDeleteId(null)
   }
 
   useHotkeys(
@@ -143,7 +147,7 @@ export function CheckTemplatesPage() {
                 Selectors
               </button>
               <button
-                onClick={() => handleDelete(template.id)}
+                onClick={() => setConfirmDeleteId(template.id)}
                 className="px-3 py-1.5 text-sm border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
               >
                 Delete
@@ -152,6 +156,13 @@ export function CheckTemplatesPage() {
           </div>
         ))}
       </div>
+
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        message="Delete this template? This action cannot be undone."
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </div>
   )
 }

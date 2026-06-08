@@ -3,7 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { getRunResults } from '@/lib/tauri'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import type { AuditRun, SelectorCheck } from '@/types'
+import { VirtualList } from '@/components/VirtualList'
+import type { AuditRun, SelectorCheck, PageResult } from '@/types'
+
+const ITEM_HEIGHT_DETAILED = 100
+const ITEM_HEIGHT_TABLE = 42
 
 export function RunDetailPage() {
   const { runId } = useParams<{ runId: string }>()
@@ -145,64 +149,68 @@ export function RunDetailPage() {
       </div>
 
       {view === 'detailed' ? (
-        <div className="space-y-2">
-          {displayedResults.map((result) => (
-            <div key={result.url} className="border border-border rounded-lg p-4 space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span
-                    className={`w-2 h-2 shrink-0 rounded-full ${
-                      result.error
-                        ? 'bg-destructive'
-                        : result.checks.every((c) => c.found)
-                          ? 'bg-success'
-                          : 'bg-destructive'
-                    }`}
-                  />
-                  <button
-                    onClick={() => openUrl(result.url)}
-                    className="text-sm font-mono text-primary hover:underline truncate cursor-pointer"
-                    title={result.url}
-                  >
-                    {result.url}
-                  </button>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  {result.status &&
-                    (result.error ? (
-                      <span className="text-xs text-destructive">Error</span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">{result.status}</span>
-                    ))}
-                  {result.responseTimeMs != null && (
-                    <span className="text-xs text-muted-foreground">{result.responseTimeMs}ms</span>
-                  )}
-                </div>
-              </div>
-              {result.error && <p className="text-xs text-destructive">{result.error}</p>}
-              {result.pageTitle && <p className="text-xs text-muted-foreground">{result.pageTitle}</p>}
-              {result.checks.length > 0 && (
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {result.checks.map((cr) => (
+        displayedResults.length > 0 ? (
+          <VirtualList<PageResult>
+            items={displayedResults}
+            itemHeight={ITEM_HEIGHT_DETAILED}
+            className="overflow-y-auto h-full space-y-2"
+            renderItem={(result) => (
+              <div key={result.url} className="border border-border rounded-lg p-4 space-y-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span
-                      key={cr.selectorCheckId}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full ${
-                        cr.found ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
+                      className={`w-2 h-2 shrink-0 rounded-full ${
+                        result.error
+                          ? 'bg-destructive'
+                          : result.checks.every((c) => c.found)
+                            ? 'bg-success'
+                            : 'bg-destructive'
                       }`}
+                    />
+                    <button
+                      onClick={() => openUrl(result.url)}
+                      className="text-sm font-mono text-primary hover:underline truncate cursor-pointer"
+                      title={result.url}
                     >
-                      <span>{cr.found ? '✓' : '✗'}</span>
-                      <span>{cr.label}</span>
-                      {cr.textContent && <span className="opacity-70">— {cr.textContent}</span>}
-                    </span>
-                  ))}
+                      {result.url}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {result.status &&
+                      (result.error ? (
+                        <span className="text-xs text-destructive">Error</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">{result.status}</span>
+                      ))}
+                    {result.responseTimeMs != null && (
+                      <span className="text-xs text-muted-foreground">{result.responseTimeMs}ms</span>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
-          {displayedResults.length === 0 && (
-            <p className="text-sm text-muted-foreground">No results match the current filter.</p>
-          )}
-        </div>
+                {result.error && <p className="text-xs text-destructive">{result.error}</p>}
+                {result.pageTitle && <p className="text-xs text-muted-foreground">{result.pageTitle}</p>}
+                {result.checks.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {result.checks.map((cr) => (
+                      <span
+                        key={cr.selectorCheckId}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full ${
+                          cr.found ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
+                        }`}
+                      >
+                        <span>{cr.found ? '✓' : '✗'}</span>
+                        <span>{cr.label}</span>
+                        {cr.textContent && <span className="opacity-70">— {cr.textContent}</span>}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">No results match the current filter.</p>
+        )
       ) : (
         <div className="border border-border rounded-lg overflow-x-auto">
           <table className="w-full text-sm">
@@ -220,62 +228,71 @@ export function RunDetailPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {displayedResults.map((result) => (
-                <tr key={result.url} className="hover:bg-muted/30">
-                  <td className="px-3 py-2">
-                    <button
-                      onClick={() => openUrl(result.url)}
-                      className="text-primary hover:underline text-xs font-mono truncate max-w-[300px] block"
-                      title={result.url}
-                    >
-                      {result.url}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 text-xs">
-                    {result.error ? <span className="text-destructive">Error</span> : result.status}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">{result.responseTimeMs}ms</td>
-                  <td
-                    className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[200px]"
-                    title={result.pageTitle ?? undefined}
-                  >
-                    {result.pageTitle ?? '—'}
-                  </td>
-                  {selectors.map((sel) => {
-                    const cr = result.checks.find((c) => c.selectorCheckId === sel.id)
-                    return (
-                      <td key={sel.id} className="px-3 py-2 text-xs">
-                        {!cr ? (
-                          <span className="text-muted-foreground">—</span>
-                        ) : cr.found ? (
-                          <span className="text-success">
-                            ✓
-                            {cr.textContent ? (
-                              <span className="text-muted-foreground ml-1">({cr.textContent})</span>
-                            ) : (
-                              ''
-                            )}
-                          </span>
-                        ) : (
-                          <span className="text-destructive">
-                            ✗
-                            {cr.textContent ? (
-                              <span className="text-muted-foreground ml-1">({cr.textContent})</span>
-                            ) : (
-                              ''
-                            )}
-                          </span>
-                        )}
+              {displayedResults.length > 0 ? (
+                <VirtualList<PageResult>
+                  items={displayedResults}
+                  itemHeight={ITEM_HEIGHT_TABLE}
+                  renderItem={(result) => (
+                    <tr key={result.url} className="hover:bg-muted/30" style={{ height: ITEM_HEIGHT_TABLE }}>
+                      <td className="px-3 py-2">
+                        <button
+                          onClick={() => openUrl(result.url)}
+                          className="text-primary hover:underline text-xs font-mono truncate max-w-[300px] block"
+                          title={result.url}
+                        >
+                          {result.url}
+                        </button>
                       </td>
-                    )
-                  })}
+                      <td className="px-3 py-2 text-xs">
+                        {result.error ? <span className="text-destructive">Error</span> : result.status}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{result.responseTimeMs}ms</td>
+                      <td
+                        className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[200px]"
+                        title={result.pageTitle ?? undefined}
+                      >
+                        {result.pageTitle ?? '—'}
+                      </td>
+                      {selectors.map((sel) => {
+                        const cr = result.checks.find((c) => c.selectorCheckId === sel.id)
+                        return (
+                          <td key={sel.id} className="px-3 py-2 text-xs">
+                            {!cr ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : cr.found ? (
+                              <span className="text-success">
+                                ✓
+                                {cr.textContent ? (
+                                  <span className="text-muted-foreground ml-1">({cr.textContent})</span>
+                                ) : (
+                                  ''
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-destructive">
+                                ✗
+                                {cr.textContent ? (
+                                  <span className="text-muted-foreground ml-1">({cr.textContent})</span>
+                                ) : (
+                                  ''
+                                )}
+                              </span>
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )}
+                />
+              ) : (
+                <tr>
+                  <td colSpan={4 + selectors.length} className="p-4 text-sm text-muted-foreground">
+                    No results match the current filter.
+                  </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
-          {displayedResults.length === 0 && (
-            <p className="text-sm text-muted-foreground p-4">No results match the current filter.</p>
-          )}
         </div>
       )}
     </div>
