@@ -51,6 +51,7 @@ export const updateAudit = (data: {
   urlPostfix?: string
   pinned?: boolean
   folder?: string | null
+  baselineRunId?: string | null
 }) => invoke<Audit>('update_audit', data)
 export const deleteAudit = (id: string) => invoke<void>('delete_audit', { id })
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
-import { getRunResults, writeFile } from '@/lib/tauri'
+import { getRunResults, updateAudit, writeFile } from '@/lib/tauri'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { save } from '@tauri-apps/plugin-dialog'
 import { VirtualList } from '@/components/VirtualList'
@@ -126,6 +126,20 @@ export function RunDetailPage() {
               className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors"
             >
               Save as Template
+            </button>
+          )}
+          {audit && (
+            <button
+              onClick={async () => {
+                await updateAudit({ id: audit.id, baselineRunId: run.id })
+              }}
+              className={`text-xs px-3 py-1 border rounded-md transition-colors ${
+                audit.baselineRunId === run.id
+                  ? 'border-primary text-primary bg-primary/10'
+                  : 'border-border hover:bg-muted'
+              }`}
+            >
+              {audit.baselineRunId === run.id ? '★ Baseline' : 'Set as Baseline'}
             </button>
           )}
           <div className="relative" ref={exportRef}>

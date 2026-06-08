@@ -85,6 +85,7 @@ pub struct Audit {
     #[serde(default)]
     pub pinned: bool,
     pub folder: Option<String>,
+    pub baseline_run_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

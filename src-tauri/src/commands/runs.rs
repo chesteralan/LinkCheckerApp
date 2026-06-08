@@ -183,6 +183,7 @@ pub async fn quick_run(
         created_at: chrono::Utc::now().to_rfc3339(),
         pinned: false,
         folder: None,
+        baseline_run_id: None,
     };
 
     let target_list = TargetList {

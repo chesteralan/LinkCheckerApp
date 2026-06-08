@@ -58,6 +58,7 @@ export interface Audit {
   createdAt: string
   pinned: boolean
   folder?: string
+  baselineRunId?: string
 }
 
 export interface SelectorResult {

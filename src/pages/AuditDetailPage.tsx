@@ -443,6 +443,25 @@ export function AuditDetailPage() {
                   </div>
                 </div>
               </div>
+              {a?.baselineRunId && (
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Baseline run: </span>
+                  <button
+                    onClick={() => navigate(`/runs/${a.baselineRunId}`)}
+                    className="text-primary underline hover:no-underline"
+                  >
+                    {a.baselineRunId.slice(0, 8)}…
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await updateAudit(a.id, { baselineRunId: null })
+                    }}
+                    className="ml-2 text-xs text-destructive hover:underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>

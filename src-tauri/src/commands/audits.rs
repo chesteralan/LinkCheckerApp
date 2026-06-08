@@ -34,6 +34,7 @@ pub fn create_audit(
     url_postfix: Option<String>,
     pinned: bool,
     folder: Option<String>,
+    baseline_run_id: Option<String>,
 ) -> Result<Audit, String> {
     let audit = Audit {
         id: Uuid::new_v4().to_string(),
@@ -51,6 +52,7 @@ pub fn create_audit(
         created_at: Utc::now().to_rfc3339(),
         pinned,
         folder,
+        baseline_run_id,
     };
 
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
@@ -70,6 +72,7 @@ pub fn update_audit(
     url_postfix: Option<String>,
     pinned: Option<bool>,
     folder: Option<Option<String>>,
+    baseline_run_id: Option<Option<String>>,
 ) -> Result<Audit, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
 
@@ -101,6 +104,9 @@ pub fn update_audit(
     }
     if let Some(folder) = folder {
         audit.folder = folder;
+    }
+    if let Some(baseline_run_id) = baseline_run_id {
+        audit.baseline_run_id = baseline_run_id;
     }
 
     let result = audit.clone();
