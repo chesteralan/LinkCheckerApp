@@ -30,6 +30,7 @@ pub fn create_check_template(
     name: String,
     checks: Vec<CheckInput>,
     pinned: bool,
+    folder: Option<String>,
 ) -> Result<CheckTemplate, String> {
     let now = Utc::now().to_rfc3339();
     let template = CheckTemplate {
@@ -51,6 +52,7 @@ pub fn create_check_template(
         created_at: now.clone(),
         updated_at: now.clone(),
         pinned,
+        folder,
     };
 
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
@@ -67,6 +69,7 @@ pub fn update_check_template(
     name: Option<String>,
     checks: Option<Vec<CheckInput>>,
     pinned: Option<bool>,
+    folder: Option<Option<String>>,
 ) -> Result<CheckTemplate, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
 
@@ -96,6 +99,9 @@ pub fn update_check_template(
     }
     if let Some(pinned) = pinned {
         template.pinned = pinned;
+    }
+    if let Some(folder) = folder {
+        template.folder = folder;
     }
     template.updated_at = Utc::now().to_rfc3339();
 

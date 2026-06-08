@@ -11,30 +11,40 @@ export function CheckTemplatesPage() {
   const { checkTemplates, loading, createCheckTemplate, updateCheckTemplate, deleteCheckTemplate } = useStore()
   const duplicateTemplates = useMemo(() => findDuplicateTemplates(checkTemplates), [checkTemplates])
   const [name, setName] = useState('')
+  const [folderName, setFolderName] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingRename, setEditingRename] = useState<{ id: string; name: string } | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [folderFilter, setFolderFilter] = useState('')
+
+  const folders = useMemo(() => {
+    const f = new Set<string>()
+    for (const t of checkTemplates) if (t.folder) f.add(t.folder)
+    return [...f].sort()
+  }, [checkTemplates])
 
   function resetForm() {
     setName('')
+    setFolderName('')
     setShowForm(false)
     setEditingRename(null)
   }
 
-  function openRename(template: { id: string; name: string }) {
+  function openRename(template: typeof checkTemplates[number]) {
     setEditingRename(template)
     setName(template.name)
+    setFolderName(template.folder ?? '')
     setShowForm(true)
   }
 
   async function handleSave() {
     if (!name.trim()) return
     if (editingRename) {
-      await updateCheckTemplate(editingRename.id, { name: name.trim() })
+      await updateCheckTemplate(editingRename.id, { name: name.trim(), folder: folderName || null })
       resetForm()
     } else {
-      const created = await createCheckTemplate(name.trim(), [])
+      const created = await createCheckTemplate(name.trim(), [], folderName || undefined)
       resetForm()
       navigate(`/check-templates/${created.id}`)
     }
@@ -117,6 +127,20 @@ export function CheckTemplatesPage() {
             autoFocus
             className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
           />
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">Folder</label>
+            <input
+              type="text"
+              placeholder="e.g. Production, Staging"
+              value={folderName}
+              onChange={(e) => setFolderName(e.target.value)}
+              list="folder-suggestions-ct"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <datalist id="folder-suggestions-ct">
+              {folders.map((f) => <option key={f} value={f} />)}
+            </datalist>
+          </div>
           <div className="flex gap-2">
             <button
               onClick={handleSave}
@@ -135,12 +159,28 @@ export function CheckTemplatesPage() {
         </div>
       </Modal>
 
+      {folders.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          <button onClick={() => setFolderFilter('')} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${!folderFilter ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+            All
+          </button>
+          {folders.map((f) => (
+            <button key={f} onClick={() => setFolderFilter(f)} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${folderFilter === f ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
+
       {checkTemplates.length === 0 && (
         <p className="text-muted-foreground text-sm">No check templates yet. Create one to get started.</p>
       )}
 
       <div className="space-y-2">
-        {[...checkTemplates].sort((a, b) => Number(b.pinned) - Number(a.pinned)).map((template) => (
+        {[...checkTemplates]
+          .filter((t) => !folderFilter || t.folder === folderFilter)
+          .sort((a, b) => Number(b.pinned) - Number(a.pinned))
+          .map((template) => (
           <div key={template.id} className="border border-border rounded-lg p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <input
@@ -167,6 +207,9 @@ export function CheckTemplatesPage() {
                   className="font-medium text-left hover:text-primary transition-colors"
                 >
                   {template.name}
+                  {template.folder && (
+                    <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{template.folder}</span>
+                  )}
                 </button>
                 <p className="text-sm text-muted-foreground">
                   {template.checks.length} check{template.checks.length !== 1 ? 's' : ''}

@@ -5,6 +5,7 @@ export interface TargetList {
   createdAt: string
   updatedAt: string
   pinned: boolean
+  folder?: string
 }
 
 export type CheckType = 'selector' | 'status' | 'regex' | 'attribute'
@@ -27,6 +28,7 @@ export interface CheckTemplate {
   createdAt: string
   updatedAt: string
   pinned: boolean
+  folder?: string
 }
 
 export function defaultCheck(): SelectorCheck {
@@ -55,6 +57,7 @@ export interface Audit {
   urlPostfix?: string
   createdAt: string
   pinned: boolean
+  folder?: string
 }
 
 export interface SelectorResult {

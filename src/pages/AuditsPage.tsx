@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
@@ -20,9 +20,18 @@ export function AuditsPage() {
   const [batchSize, setBatchSize] = useState(5)
   const [timeoutSecs, setTimeoutSecs] = useState(10)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [folderFilter, setFolderFilter] = useState('')
+  const [folderName, setFolderName] = useState('')
+
+  const folders = useMemo(() => {
+    const f = new Set<string>()
+    for (const a of audits) if (a.folder) f.add(a.folder)
+    return [...f].sort()
+  }, [audits])
 
   function resetForm() {
     setName('')
+    setFolderName('')
     setTargetListId('')
     setCheckTemplateId('')
     setMode('batch')
@@ -37,7 +46,7 @@ export function AuditsPage() {
       mode,
       batchSize,
       timeoutSecs,
-    })
+    }, undefined, undefined, folderName || undefined)
     resetForm()
   }
 
@@ -157,6 +166,21 @@ export function AuditsPage() {
             </div>
           </div>
 
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">Folder</label>
+            <input
+              type="text"
+              placeholder="e.g. Production, Staging"
+              value={folderName}
+              onChange={(e) => setFolderName(e.target.value)}
+              list="folder-suggestions-a"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <datalist id="folder-suggestions-a">
+              {folders.map((f) => <option key={f} value={f} />)}
+            </datalist>
+          </div>
+
           <div className="flex gap-2">
             <button
               onClick={handleCreate}
@@ -195,8 +219,24 @@ export function AuditsPage() {
         </div>
       )}
 
+      {folders.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          <button onClick={() => setFolderFilter('')} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${!folderFilter ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+            All
+          </button>
+          {folders.map((f) => (
+            <button key={f} onClick={() => setFolderFilter(f)} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${folderFilter === f ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {[...audits].sort((a, b) => Number(b.pinned) - Number(a.pinned)).map((audit) => {
+        {[...audits]
+          .filter((a) => !folderFilter || a.folder === folderFilter)
+          .sort((a, b) => Number(b.pinned) - Number(a.pinned))
+          .map((audit) => {
           const tl = targetLists.find((t) => t.id === audit.targetListId)
           const ct = checkTemplates.find((c) => c.id === audit.checkTemplateId)
           return (
@@ -215,7 +255,7 @@ export function AuditsPage() {
                 />
                 <div className="flex-1 cursor-pointer" onClick={() => navigate(`/audits/${audit.id}`)}>
                   <div className="flex items-center justify-between">
-                    <h3 className="font-medium">{audit.name}</h3>
+                    <h3 className="font-medium">{audit.name}{audit.folder && <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{audit.folder}</span>}</h3>
                     <button
                       onClick={(e) => {
                         e.stopPropagation()

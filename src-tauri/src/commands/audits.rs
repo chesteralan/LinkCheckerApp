@@ -33,6 +33,7 @@ pub fn create_audit(
     origin_override: Option<String>,
     url_postfix: Option<String>,
     pinned: bool,
+    folder: Option<String>,
 ) -> Result<Audit, String> {
     let audit = Audit {
         id: Uuid::new_v4().to_string(),
@@ -49,6 +50,7 @@ pub fn create_audit(
         url_postfix: url_postfix.filter(|p| !p.is_empty()),
         created_at: Utc::now().to_rfc3339(),
         pinned,
+        folder,
     };
 
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
@@ -67,6 +69,7 @@ pub fn update_audit(
     origin_override: Option<String>,
     url_postfix: Option<String>,
     pinned: Option<bool>,
+    folder: Option<Option<String>>,
 ) -> Result<Audit, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
 
@@ -95,6 +98,9 @@ pub fn update_audit(
     }
     if let Some(pinned) = pinned {
         audit.pinned = pinned;
+    }
+    if let Some(folder) = folder {
+        audit.folder = folder;
     }
 
     let result = audit.clone();

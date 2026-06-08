@@ -12,21 +12,22 @@ export function normalizeUrl(raw: string): string {
 
 // Target Lists
 export const listTargetLists = () => invoke<TargetList[]>('list_target_lists')
-export const createTargetList = (data: { name: string; urls: string[]; pinned?: boolean }) =>
+export const createTargetList = (data: { name: string; urls: string[]; pinned?: boolean; folder?: string | null }) =>
   invoke<TargetList>('create_target_list', { ...data, pinned: data.pinned ?? false })
-export const updateTargetList = (data: { id: string; name?: string; urls?: string[]; pinned?: boolean }) =>
+export const updateTargetList = (data: { id: string; name?: string; urls?: string[]; pinned?: boolean; folder?: string | null }) =>
   invoke<TargetList>('update_target_list', data)
 export const deleteTargetList = (id: string) => invoke<void>('delete_target_list', { id })
 
 // Check Templates
 export const listCheckTemplates = () => invoke<CheckTemplate[]>('list_check_templates')
-export const createCheckTemplate = (data: { name: string; checks: SelectorCheck[]; pinned?: boolean }) =>
+export const createCheckTemplate = (data: { name: string; checks: SelectorCheck[]; pinned?: boolean; folder?: string | null }) =>
   invoke<CheckTemplate>('create_check_template', { ...data, pinned: data.pinned ?? false })
 export const updateCheckTemplate = (data: {
   id: string
   name?: string
   checks?: SelectorCheck[]
   pinned?: boolean
+  folder?: string | null
 }) => invoke<CheckTemplate>('update_check_template', data)
 export const deleteCheckTemplate = (id: string) => invoke<void>('delete_check_template', { id })
 
@@ -40,6 +41,7 @@ export const createAudit = (data: {
   originOverride?: string
   urlPostfix?: string
   pinned?: boolean
+  folder?: string | null
 }) => invoke<Audit>('create_audit', { ...data, pinned: data.pinned ?? false })
 export const updateAudit = (data: {
   id: string
@@ -48,6 +50,7 @@ export const updateAudit = (data: {
   originOverride?: string
   urlPostfix?: string
   pinned?: boolean
+  folder?: string | null
 }) => invoke<Audit>('update_audit', data)
 export const deleteAudit = (id: string) => invoke<void>('delete_audit', { id })
 

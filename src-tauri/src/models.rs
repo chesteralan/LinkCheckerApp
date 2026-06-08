@@ -10,6 +10,7 @@ pub struct TargetList {
     pub updated_at: String,
     #[serde(default)]
     pub pinned: bool,
+    pub folder: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -46,6 +47,7 @@ pub struct CheckTemplate {
     pub updated_at: String,
     #[serde(default)]
     pub pinned: bool,
+    pub folder: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +84,7 @@ pub struct Audit {
     pub created_at: String,
     #[serde(default)]
     pub pinned: bool,
+    pub folder: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

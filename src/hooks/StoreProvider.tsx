@@ -34,13 +34,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false))
   }, [])
 
-  const createTargetList = useCallback(async (name: string, urls: string[]) => {
-    const created = await api.createTargetList({ name, urls })
+  const createTargetList = useCallback(async (name: string, urls: string[], folder?: string) => {
+    const created = await api.createTargetList({ name, urls, folder: folder ?? null })
     setTargetLists((prev) => [...prev, created])
     return created
   }, [])
 
-  const updateTargetList = useCallback(async (id: string, data: { name?: string; urls?: string[]; pinned?: boolean }) => {
+  const updateTargetList = useCallback(async (id: string, data: { name?: string; urls?: string[]; pinned?: boolean; folder?: string | null }) => {
     const updated = await api.updateTargetList({ id, ...data })
     setTargetLists((prev) => prev.map((tl) => (tl.id === id ? updated : tl)))
     return updated
@@ -51,14 +51,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setTargetLists((prev) => prev.filter((tl) => tl.id !== id))
   }, [])
 
-  const createCheckTemplate = useCallback(async (name: string, checks: SelectorCheck[]) => {
-    const created = await api.createCheckTemplate({ name, checks })
+  const createCheckTemplate = useCallback(async (name: string, checks: SelectorCheck[], folder?: string) => {
+    const created = await api.createCheckTemplate({ name, checks, folder: folder ?? null })
     setCheckTemplates((prev) => [...prev, created])
     return created
   }, [])
 
   const updateCheckTemplate = useCallback(
-    async (id: string, data: { name?: string; checks?: SelectorCheck[]; pinned?: boolean }) => {
+    async (id: string, data: { name?: string; checks?: SelectorCheck[]; pinned?: boolean; folder?: string | null }) => {
       const updated = await api.updateCheckTemplate({ id, ...data })
       setCheckTemplates((prev) => prev.map((ct) => (ct.id === id ? updated : ct)))
       return updated
@@ -97,8 +97,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       config: Audit['config'],
       originOverride?: string,
       urlPostfix?: string,
+      folder?: string,
     ) => {
-      const created = await api.createAudit({ name, targetListId, checkTemplateId, config, originOverride, urlPostfix })
+      const created = await api.createAudit({ name, targetListId, checkTemplateId, config, originOverride, urlPostfix, folder: folder ?? null })
       setAudits((prev) => [...prev, created])
       return created
     },
@@ -108,7 +109,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const updateAudit = useCallback(
     async (
       id: string,
-      data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string; pinned?: boolean },
+      data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string; pinned?: boolean; folder?: string | null },
     ) => {
       const updated = await api.updateAudit({ id, ...data })
       setAudits((prev) => prev.map((a) => (a.id === id ? updated : a)))

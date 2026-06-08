@@ -182,6 +182,7 @@ pub async fn quick_run(
         url_postfix: url_postfix.filter(|p| !p.is_empty()),
         created_at: chrono::Utc::now().to_rfc3339(),
         pinned: false,
+        folder: None,
     };
 
     let target_list = TargetList {
@@ -191,6 +192,7 @@ pub async fn quick_run(
         created_at: String::new(),
         updated_at: String::new(),
         pinned: false,
+        folder: None,
     };
 
     let check_template = CheckTemplate {
@@ -200,6 +202,7 @@ pub async fn quick_run(
         created_at: String::new(),
         updated_at: String::new(),
         pinned: false,
+        folder: None,
     };
 
     let run = state.checker.run(&app, &audit, &target_list, &check_template).await;

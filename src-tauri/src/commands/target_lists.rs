@@ -64,6 +64,7 @@ pub fn create_target_list(
     name: String,
     urls: Vec<String>,
     pinned: bool,
+    folder: Option<String>,
 ) -> Result<TargetList, String> {
     let now = Utc::now().to_rfc3339();
     let urls: Vec<String> = urls.iter().map(|u| normalize_url(u)).filter(|u| !u.is_empty()).collect();
@@ -74,6 +75,7 @@ pub fn create_target_list(
         created_at: now.clone(),
         updated_at: now.clone(),
         pinned,
+        folder,
     };
 
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
@@ -90,6 +92,7 @@ pub fn update_target_list(
     name: Option<String>,
     urls: Option<Vec<String>>,
     pinned: Option<bool>,
+    folder: Option<Option<String>>,
 ) -> Result<TargetList, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
 
@@ -107,6 +110,9 @@ pub fn update_target_list(
     }
     if let Some(pinned) = pinned {
         list.pinned = pinned;
+    }
+    if let Some(folder) = folder {
+        list.folder = folder;
     }
     list.updated_at = Utc::now().to_rfc3339();
 

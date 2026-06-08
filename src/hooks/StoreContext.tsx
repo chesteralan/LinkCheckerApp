@@ -9,13 +9,13 @@ export interface StoreState {
 }
 
 export interface StoreActions {
-  createTargetList: (name: string, urls: string[]) => Promise<TargetList>
-  updateTargetList: (id: string, data: { name?: string; urls?: string[]; pinned?: boolean }) => Promise<TargetList>
+  createTargetList: (name: string, urls: string[], folder?: string) => Promise<TargetList>
+  updateTargetList: (id: string, data: { name?: string; urls?: string[]; pinned?: boolean; folder?: string | null }) => Promise<TargetList>
   deleteTargetList: (id: string) => Promise<void>
-  createCheckTemplate: (name: string, checks: SelectorCheck[]) => Promise<CheckTemplate>
+  createCheckTemplate: (name: string, checks: SelectorCheck[], folder?: string) => Promise<CheckTemplate>
   updateCheckTemplate: (
     id: string,
-    data: { name?: string; checks?: SelectorCheck[]; pinned?: boolean },
+    data: { name?: string; checks?: SelectorCheck[]; pinned?: boolean; folder?: string | null },
   ) => Promise<CheckTemplate>
   patchCheckTemplate: (id: string, data: { name?: string; checks?: SelectorCheck[] }) => void
   deleteCheckTemplate: (id: string) => Promise<void>
@@ -26,10 +26,11 @@ export interface StoreActions {
     config: Audit['config'],
     originOverride?: string,
     urlPostfix?: string,
+    folder?: string,
   ) => Promise<Audit>
   updateAudit: (
     id: string,
-    data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string; pinned?: boolean },
+    data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string; pinned?: boolean; folder?: string | null },
   ) => Promise<Audit>
   deleteAudit: (id: string) => Promise<void>
   reload: () => Promise<void>

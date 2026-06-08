@@ -17,6 +17,7 @@ export function TargetListsPage() {
   const duplicateLists = useMemo(() => findDuplicateLists(targetLists), [targetLists])
   const [editing, setEditing] = useState<TargetList | null>(null)
   const [name, setName] = useState('')
+  const [folderName, setFolderName] = useState('')
   const [urlsText, setUrlsText] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [showScraper, setShowScraper] = useState(false)
@@ -25,6 +26,13 @@ export function TargetListsPage() {
   const [auditModalList, setAuditModalList] = useState<TargetList | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<TargetList | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [folderFilter, setFolderFilter] = useState('')
+
+  const folders = useMemo(() => {
+    const f = new Set<string>()
+    for (const tl of targetLists) if (tl.folder) f.add(tl.folder)
+    return [...f].sort()
+  }, [targetLists])
 
   const urlLines = urlsText.split('\n').map((u) => u.trim()).filter(Boolean)
   const invalidUrls = urlLines.filter((u) => u && !/^https?:\/\/[^\s]+/.test(u))
@@ -36,6 +44,7 @@ export function TargetListsPage() {
 
   function resetForm() {
     setName('')
+    setFolderName('')
     setUrlsText('')
     setEditing(null)
     setShowForm(false)
@@ -44,6 +53,7 @@ export function TargetListsPage() {
   function openEdit(list: TargetList) {
     setEditing(list)
     setName(list.name)
+    setFolderName(list.folder ?? '')
     setUrlsText(list.urls.join('\n'))
     setShowForm(true)
   }
@@ -55,9 +65,9 @@ export function TargetListsPage() {
       .filter(Boolean)
 
     if (editing) {
-      await updateTargetList(editing.id, { name, urls })
+      await updateTargetList(editing.id, { name, urls, folder: folderName || null })
     } else {
-      await createTargetList(name, urls)
+      await createTargetList(name, urls, folderName || undefined)
     }
     resetForm()
   }
@@ -142,6 +152,27 @@ export function TargetListsPage() {
             autoFocus
             className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
           />
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">Folder</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="e.g. Production, Staging"
+                value={folderName}
+                onChange={(e) => setFolderName(e.target.value)}
+                list="folder-suggestions-tl"
+                className="flex-1 px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              {folderName && (
+                <button onClick={() => setFolderName('')} className="px-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  Clear
+                </button>
+              )}
+            </div>
+            <datalist id="folder-suggestions-tl">
+              {folders.map((f) => <option key={f} value={f} />)}
+            </datalist>
+          </div>
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-sm text-muted-foreground">URLs (one per line)</label>
@@ -253,12 +284,28 @@ export function TargetListsPage() {
         </div>
       </Modal>
 
+      {folders.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          <button onClick={() => setFolderFilter('')} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${!folderFilter ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+            All
+          </button>
+          {folders.map((f) => (
+            <button key={f} onClick={() => setFolderFilter(f)} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${folderFilter === f ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
+
       {targetLists.length === 0 && (
         <p className="text-muted-foreground text-sm">No target lists yet. Create one to get started.</p>
       )}
 
       <div className="space-y-2">
-        {[...targetLists].sort((a, b) => Number(b.pinned) - Number(a.pinned)).map((list) => (
+        {[...targetLists]
+          .filter((l) => !folderFilter || l.folder === folderFilter)
+          .sort((a, b) => Number(b.pinned) - Number(a.pinned))
+          .map((list) => (
           <div key={list.id} className="border border-border rounded-lg p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <input
@@ -280,7 +327,12 @@ export function TargetListsPage() {
                 {list.pinned ? '★' : '☆'}
               </button>
               <div>
-                <h3 className="font-medium">{list.name}</h3>
+                <h3 className="font-medium">
+                  {list.name}
+                  {list.folder && (
+                    <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{list.folder}</span>
+                  )}
+                </h3>
                 <p className="text-sm text-muted-foreground">
                   {list.urls.length} URL{list.urls.length !== 1 ? 's' : ''}
                   {duplicateLists.has(list.id) && (
