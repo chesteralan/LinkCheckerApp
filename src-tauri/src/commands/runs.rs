@@ -292,14 +292,20 @@ pub fn list_run_files(state: State<'_, AppState>) -> Result<Vec<RunFileInfo>, St
 
 #[tauri::command]
 pub fn list_all_runs(state: State<'_, AppState>) -> Result<Vec<AuditRun>, String> {
-    let runs = state.storage.load_all_runs();
-    Ok(runs)
+    Ok(state.storage.load_recent_runs(100))
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn list_audit_runs(state: State<'_, AppState>, audit_id: String) -> Result<Vec<AuditRun>, String> {
-    let runs = state.storage.load_all_runs();
-    Ok(runs.into_iter().filter(|r| r.audit_id == audit_id).collect())
+    let runs = state.storage.load_recent_runs(500);
+    let mut result: Vec<AuditRun> = runs
+        .into_iter()
+        .filter(|r| r.audit_id == audit_id)
+        .collect();
+    for run in &mut result {
+        run.results.clear();
+    }
+    Ok(result)
 }
 
 #[tauri::command]
