@@ -109,7 +109,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const updateAudit = useCallback(
     async (
       id: string,
-      data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string; pinned?: boolean; folder?: string | null },
+      data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string; pinned?: boolean; folder?: string | null; baselineRunId?: string | null },
     ) => {
       const updated = await api.updateAudit({ id, ...data })
       setAudits((prev) => prev.map((a) => (a.id === id ? updated : a)))

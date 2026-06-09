@@ -46,6 +46,8 @@ export function AuditsPage() {
       mode,
       batchSize,
       timeoutSecs,
+      headers: {},
+      cookies: [],
     }, undefined, undefined, folderName || undefined)
     resetForm()
   }

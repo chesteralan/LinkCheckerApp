@@ -30,7 +30,7 @@ export interface StoreActions {
   ) => Promise<Audit>
   updateAudit: (
     id: string,
-    data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string; pinned?: boolean; folder?: string | null },
+    data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string; pinned?: boolean; folder?: string | null; baselineRunId?: string | null },
   ) => Promise<Audit>
   deleteAudit: (id: string) => Promise<void>
   reload: () => Promise<void>

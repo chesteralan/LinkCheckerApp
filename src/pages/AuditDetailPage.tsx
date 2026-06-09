@@ -24,7 +24,7 @@ export function AuditDetailPage() {
 
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState(audit?.name ?? '')
-  const [editMode, setEditMode] = useState<'sequential' | 'batch'>(audit?.config.mode ?? 'batch')
+  const [editMode, setEditMode] = useState<'sequential' | 'batch'>((audit?.config.mode as 'sequential' | 'batch') ?? 'batch')
   const [editBatchSize, setEditBatchSize] = useState(audit?.config.batchSize ?? 5)
   const [editTimeoutSecs, setEditTimeoutSecs] = useState(audit?.config.timeoutSecs ?? 10)
   const [editHeaders, setEditHeaders] = useState<Record<string, string>>(audit?.config.headers ?? {})
@@ -82,7 +82,7 @@ export function AuditDetailPage() {
 
   function startEdit() {
     setEditName(a.name)
-    setEditMode(a.config.mode)
+    setEditMode(a.config.mode as 'sequential' | 'batch')
     setEditBatchSize(a.config.batchSize)
     setEditTimeoutSecs(a.config.timeoutSecs)
     setEditHeaders(a.config.headers ?? {})
