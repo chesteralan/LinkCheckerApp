@@ -24,5 +24,6 @@ export default defineConfig({
   envPrefix: ['VITE_', 'TAURI_'],
   build: {
     outDir: 'build',
+    chunkSizeWarningLimit: 800,
   },
 })

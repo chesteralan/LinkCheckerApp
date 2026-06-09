@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, save } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import type { TargetList } from '@/types'
-import { normalizeUrl, readFile, scrapeLinks } from '@/lib/tauri'
+import { normalizeUrl, readFile, scrapeLinks, writeFile } from '@/lib/tauri'
 import { resolveUrl } from '@/utils/resolveUrl'
 import { findDuplicateLists } from '@/utils/detectDuplicates'
 
@@ -124,8 +124,6 @@ export function TargetListsPage() {
           <button
             onClick={async () => {
               const selected = targetLists.filter((l) => selectedIds.has(l.id))
-              const { writeFile } = await import('@/lib/tauri')
-              const { save } = await import('@tauri-apps/plugin-dialog')
               const path = await save({ defaultPath: 'exported-urls.txt', filters: [{ name: 'Text', extensions: ['txt'] }] })
               if (!path) return
               const content = selected.flatMap((l) => l.urls).join('\n')
