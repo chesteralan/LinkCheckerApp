@@ -14,15 +14,15 @@ describe('constants', () => {
   })
 
   it('NAV_ITEMS has all routes', () => {
-    expect(NAV_ITEMS).toHaveLength(4)
+    expect(NAV_ITEMS).toHaveLength(5)
     NAV_ITEMS.forEach((item) => {
       expect(item.to).toMatch(/^\//)
       expect(item.label).toBeTruthy()
     })
   })
 
-  it('HOTKEY_NAV maps 1-4 to routes', () => {
-    expect(Object.keys(HOTKEY_NAV)).toEqual(['1', '2', '3', '4'])
+  it('HOTKEY_NAV maps 1-5 to routes', () => {
+    expect(Object.keys(HOTKEY_NAV)).toEqual(['1', '2', '3', '4', '5'])
     Object.values(HOTKEY_NAV).forEach((path) => {
       expect(path).toMatch(/^\//)
     })
