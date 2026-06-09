@@ -26,6 +26,7 @@ pub fn list_audits(state: State<'_, AppState>) -> Result<Vec<Audit>, String> {
 }
 
 #[tauri::command(rename_all = "camelCase")]
+#[allow(clippy::too_many_arguments)]
 pub fn create_audit(
     state: State<'_, AppState>,
     name: String,
@@ -66,6 +67,7 @@ pub fn create_audit(
 }
 
 #[tauri::command(rename_all = "camelCase")]
+#[allow(clippy::too_many_arguments)]
 pub fn update_audit(
     state: State<'_, AppState>,
     id: String,
