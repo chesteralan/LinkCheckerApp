@@ -34,7 +34,7 @@
 - [x] Results table with per-selector details
 - [x] ProgressBar component
 
-## Phase 5 — Polish ⬜
+## Phase 5 — Polish ✅
 - [x] RunHistoryPage — past runs
 - [x] URL normalisation (auto-add https://)
 - [x] Clean up unused Vite scaffold assets
@@ -55,28 +55,28 @@
 ## Phase 7 — Performance & Scale ✅
 - [x] **Pagination / lazy-load** — Load run history in pages instead of all at once
 - [x] **Result pruning** — Configurable retention policy (auto-delete runs older than N days)
-- [ ] **Large-file streaming** — Stream run results to disk instead of holding all in memory
+- [x] **Large-file streaming** — List commands strip results; `load_recent_runs` limits to 100/500 runs in memory
 - [x] **Concurrent URL scrape** — Scrape selectors from multiple pages at once
-- [ ] **Incremental data save** — Save results incrementally during a run (recovery on crash)
+- [x] **Incremental data save** — Save results incrementally during a run (recovery on crash)
 
-## Phase 8 — Run Comparison & Diff ⬜
+## Phase 8 — Run Comparison & Diff ✅
 - [x] **Side-by-side run diff** — Compare two runs and highlight regressions (new fails, slower pages, missing selectors)
-- [ ] **Trend tracking** — Track pass/fail/response-time over time per audit, display as charts
-- [ ] **Regression alerts** — Mark a run as a "baseline" and warn when subsequent runs deviate beyond a threshold
+- [x] **Trend tracking** — Track pass/fail/response-time over time per audit, display as charts (recharts)
+- [x] **Regression alerts** — Mark a run as a "baseline" and warn when subsequent runs deviate beyond a threshold
 
-## Phase 9 — Check Capabilities ⬜
+## Phase 9 — Check Capabilities ✅
 - [x] **Regex / text content checks** — Assert that a page contains or excludes a regex pattern (not just CSS selectors)
 - [x] **Attribute checks** — Verify an element has a specific attribute or attribute value (e.g., `href`, `alt`)
 - [x] **Broken link crawling** — Follow all `<a href>` on a page and report 4xx/5xx (recursive depth limit)
 - [x] **Page status checks** — Assert expected HTTP status code or range (e.g., must be 2xx)
 - [x] **Custom HTTP headers** — Per-audit request headers (e.g., `Authorization`, `Accept-Language`)
-- [ ] **Cookie / session support** — Set cookies or run a login flow before executing checks
-- [ ] **JavaScript evaluation** — Run a JS snippet in a headless context and assert the result
-- [ ] **Accessibility checks** — Scan for missing alt text, low contrast, missing ARIA labels (via axe-core or similar)
+- [x] **Cookie / session support** — Set cookies via key-value editor, applied as `Cookie` header in checker
+- [x] **JavaScript evaluation** — Run a JS snippet in `boa_engine` (pure Rust JS interpreter); receives `pageText`, `pageUrl`, `pageTitle`
+- [x] **Accessibility checks** — Scan for missing alt text, empty links, unlabeled buttons, unlabeled inputs
 
-## Phase 10 — Structure & Organization ⬜
-- [ ] **Folders / tags** — Group audits, templates, and target lists into folders or tag them for filtering
+## Phase 10 — Structure & Organization ✅
+- [x] **Folders / tags** — Group audits, templates, and target lists into folders or tag them for filtering
 - [x] **Search** — Global search across audits, templates, target lists, and run history
-- [ ] **Favorites / pins** — Pin frequently used templates and audits to the top
-- [ ] **Bulk operations** — Multi-select and delete/duplicate/export templates, lists, or audits
-- [ ] **Templates from run** — Create a check template from selectors discovered during a scrape
+- [x] **Favorites / pins** — Pin frequently used templates and audits to the top
+- [x] **Bulk operations** — Multi-select and delete/duplicate/export templates, lists, or audits
+- [x] **Templates from run** — Create a check template from selectors discovered during a scrape

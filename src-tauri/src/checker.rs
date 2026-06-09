@@ -415,7 +415,7 @@ fn run_accessibility_check(check: &SelectorCheck, html: &str) -> SelectorResult 
                 issue_type: "missing-alt".into(),
                 element: tag.clone(),
                 selector: format!("{}{}", tag, id_attr),
-                message: format!("Image is missing alt text"),
+                message: "Image is missing alt text".to_string(),
             });
         }
     }
