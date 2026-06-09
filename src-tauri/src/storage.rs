@@ -108,6 +108,26 @@ impl Storage {
         runs
     }
 
+    pub fn load_recent_runs(&self, limit: usize) -> Vec<AuditRun> {
+        let hd = self.history_dir();
+        let mut runs: Vec<AuditRun> = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&hd) {
+            let mut paths: Vec<_> = entries.flatten().map(|e| e.path()).collect();
+            paths.sort_by_key(|p| p.file_name().map(|n| n.to_os_string()).unwrap_or_default());
+            for path in paths.iter().rev().take(limit) {
+                if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                    if let Ok(content) = std::fs::read_to_string(path) {
+                        if let Ok(mut run) = serde_json::from_str::<AuditRun>(&content) {
+                            run.results.clear();
+                            runs.push(run);
+                        }
+                    }
+                }
+            }
+        }
+        runs
+    }
+
     pub fn list_run_files(&self) -> Vec<RunFileInfo> {
         let hd = self.history_dir();
         let mut infos: Vec<RunFileInfo> = Vec::new();
@@ -168,6 +188,26 @@ impl Storage {
         if let Ok(entries) = std::fs::read_dir(&hd) {
             for entry in entries.flatten() {
                 std::fs::remove_file(entry.path()).ok();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn prune_history(&self, max_days: u32) -> Result<(), String> {
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(max_days as i64);
+        let hd = self.history_dir();
+        if let Ok(entries) = std::fs::read_dir(&hd) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    if let Ok(run) = serde_json::from_str::<AuditRun>(&content) {
+                        if let Ok(started) = chrono::DateTime::parse_from_rfc3339(&run.started_at) {
+                            if started < cutoff {
+                                std::fs::remove_file(&path).ok();
+                            }
+                        }
+                    }
+                }
             }
         }
         Ok(())

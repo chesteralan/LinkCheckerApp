@@ -77,6 +77,9 @@ pub fn run() {
             commands::runs::get_data_path,
             commands::runs::open_data_folder,
             commands::runs::clear_history,
+            commands::runs::prune_history,
+            commands::runs::set_history_retention,
+            commands::runs::check_links,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

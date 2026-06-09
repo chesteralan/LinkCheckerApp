@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use chrono::Utc;
 use serde::Deserialize;
 use tauri::State;
@@ -12,6 +13,10 @@ pub struct AuditConfigInput {
     pub mode: String,
     pub batch_size: u32,
     pub timeout_secs: u64,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub cookies: Vec<crate::models::KeyValuePair>,
 }
 
 #[tauri::command]
@@ -20,6 +25,7 @@ pub fn list_audits(state: State<'_, AppState>) -> Result<Vec<Audit>, String> {
     Ok(data.audits.clone())
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command(rename_all = "camelCase")]
 pub fn create_audit(
     state: State<'_, AppState>,
@@ -29,6 +35,9 @@ pub fn create_audit(
     config: AuditConfigInput,
     origin_override: Option<String>,
     url_postfix: Option<String>,
+    pinned: bool,
+    folder: Option<String>,
+    baseline_run_id: Option<String>,
 ) -> Result<Audit, String> {
     let audit = Audit {
         id: Uuid::new_v4().to_string(),
@@ -39,10 +48,15 @@ pub fn create_audit(
             mode: config.mode,
             batch_size: config.batch_size,
             timeout_secs: config.timeout_secs,
+            headers: config.headers,
+            cookies: config.cookies,
         },
         origin_override: origin_override.filter(|o| !o.is_empty()),
         url_postfix: url_postfix.filter(|p| !p.is_empty()),
         created_at: Utc::now().to_rfc3339(),
+        pinned,
+        folder,
+        baseline_run_id,
     };
 
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
@@ -52,6 +66,7 @@ pub fn create_audit(
     Ok(audit)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command(rename_all = "camelCase")]
 pub fn update_audit(
     state: State<'_, AppState>,
@@ -60,6 +75,9 @@ pub fn update_audit(
     config: Option<AuditConfigInput>,
     origin_override: Option<String>,
     url_postfix: Option<String>,
+    pinned: Option<bool>,
+    folder: Option<Option<String>>,
+    baseline_run_id: Option<Option<String>>,
 ) -> Result<Audit, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
 
@@ -77,6 +95,8 @@ pub fn update_audit(
             mode: config.mode,
             batch_size: config.batch_size,
             timeout_secs: config.timeout_secs,
+            headers: config.headers,
+            cookies: config.cookies,
         };
     }
     if let Some(oo) = origin_override {
@@ -84,6 +104,15 @@ pub fn update_audit(
     }
     if let Some(up) = url_postfix {
         audit.url_postfix = if up.is_empty() { None } else { Some(up) };
+    }
+    if let Some(pinned) = pinned {
+        audit.pinned = pinned;
+    }
+    if let Some(folder) = folder {
+        audit.folder = folder;
+    }
+    if let Some(baseline_run_id) = baseline_run_id {
+        audit.baseline_run_id = baseline_run_id;
     }
 
     let result = audit.clone();

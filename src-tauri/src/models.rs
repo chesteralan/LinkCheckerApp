@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -8,13 +9,35 @@ pub struct TargetList {
     pub urls: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub pinned: bool,
+    pub folder: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum CheckType {
+    #[default]
+    Selector,
+    Status,
+    Regex,
+    Attribute,
+    Accessibility,
+    JavaScript,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SelectorCheck {
     pub id: String,
     pub selector: String,
     pub label: String,
+    #[serde(default)]
+    pub check_type: CheckType,
+    pub expected_status: Option<u16>,
+    pub pattern: Option<String>,
+    pub attribute_name: Option<String>,
+    pub attribute_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +48,9 @@ pub struct CheckTemplate {
     pub checks: Vec<SelectorCheck>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub pinned: bool,
+    pub folder: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +59,16 @@ pub struct AuditConfig {
     pub mode: String,
     pub batch_size: u32,
     pub timeout_secs: u64,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub cookies: Vec<KeyValuePair>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyValuePair {
+    pub key: String,
+    pub value: String,
 }
 
 impl Default for AuditConfig {
@@ -41,6 +77,8 @@ impl Default for AuditConfig {
             mode: "batch".into(),
             batch_size: 5,
             timeout_secs: 10,
+            headers: HashMap::new(),
+            cookies: Vec::new(),
         }
     }
 }
@@ -56,9 +94,22 @@ pub struct Audit {
     pub origin_override: Option<String>,
     pub url_postfix: Option<String>,
     pub created_at: String,
+    #[serde(default)]
+    pub pinned: bool,
+    pub folder: Option<String>,
+    pub baseline_run_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct A11yIssue {
+    pub issue_type: String,
+    pub element: String,
+    pub selector: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SelectorResult {
     pub selector_check_id: String,
@@ -67,6 +118,10 @@ pub struct SelectorResult {
     pub found: bool,
     pub count: usize,
     pub text_content: Option<String>,
+    #[serde(default)]
+    pub check_type: CheckType,
+    #[serde(default)]
+    pub a11y_issues: Vec<A11yIssue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,6 +163,12 @@ pub struct AppData {
     pub target_lists: Vec<TargetList>,
     pub check_templates: Vec<CheckTemplate>,
     pub audits: Vec<Audit>,
+    #[serde(default = "default_max_history_days")]
+    pub max_history_days: u32,
+}
+
+fn default_max_history_days() -> u32 {
+    90
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,12 +186,24 @@ pub struct RunFileInfo {
     pub timestamp_ms: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkCheckResult {
+    pub url: String,
+    pub source_url: String,
+    pub status: Option<u16>,
+    pub status_text: String,
+    pub error: Option<String>,
+    pub depth: u32,
+}
+
 impl AppData {
     pub fn empty() -> Self {
         Self {
             target_lists: Vec::new(),
             check_templates: Vec::new(),
             audits: Vec::new(),
+            max_history_days: default_max_history_days(),
         }
     }
 }

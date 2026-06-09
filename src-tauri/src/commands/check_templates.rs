@@ -3,13 +3,19 @@ use serde::Deserialize;
 use tauri::State;
 use uuid::Uuid;
 
-use crate::models::{CheckTemplate, SelectorCheck};
+use crate::models::{CheckTemplate, CheckType, SelectorCheck};
 use crate::AppState;
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CheckInput {
     pub selector: String,
     pub label: String,
+    pub check_type: Option<CheckType>,
+    pub expected_status: Option<u16>,
+    pub pattern: Option<String>,
+    pub attribute_name: Option<String>,
+    pub attribute_value: Option<String>,
 }
 
 #[tauri::command]
@@ -23,6 +29,8 @@ pub fn create_check_template(
     state: State<'_, AppState>,
     name: String,
     checks: Vec<CheckInput>,
+    pinned: bool,
+    folder: Option<String>,
 ) -> Result<CheckTemplate, String> {
     let now = Utc::now().to_rfc3339();
     let template = CheckTemplate {
@@ -34,10 +42,17 @@ pub fn create_check_template(
                 id: Uuid::new_v4().to_string(),
                 selector: c.selector,
                 label: c.label,
+                check_type: c.check_type.unwrap_or_default(),
+                expected_status: c.expected_status,
+                pattern: c.pattern,
+                attribute_name: c.attribute_name,
+                attribute_value: c.attribute_value,
             })
             .collect(),
         created_at: now.clone(),
-        updated_at: now,
+        updated_at: now.clone(),
+        pinned,
+        folder,
     };
 
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
@@ -53,6 +68,8 @@ pub fn update_check_template(
     id: String,
     name: Option<String>,
     checks: Option<Vec<CheckInput>>,
+    pinned: Option<bool>,
+    folder: Option<Option<String>>,
 ) -> Result<CheckTemplate, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
 
@@ -72,8 +89,19 @@ pub fn update_check_template(
                 id: Uuid::new_v4().to_string(),
                 selector: c.selector,
                 label: c.label,
+                check_type: c.check_type.unwrap_or_default(),
+                expected_status: c.expected_status,
+                pattern: c.pattern,
+                attribute_name: c.attribute_name,
+                attribute_value: c.attribute_value,
             })
             .collect();
+    }
+    if let Some(pinned) = pinned {
+        template.pinned = pinned;
+    }
+    if let Some(folder) = folder {
+        template.folder = folder;
     }
     template.updated_at = Utc::now().to_rfc3339();
 

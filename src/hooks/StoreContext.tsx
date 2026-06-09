@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { TargetList, CheckTemplate, Audit } from '@/types'
+import type { TargetList, CheckTemplate, Audit, SelectorCheck } from '@/types'
 
 export interface StoreState {
   targetLists: TargetList[]
@@ -9,15 +9,15 @@ export interface StoreState {
 }
 
 export interface StoreActions {
-  createTargetList: (name: string, urls: string[]) => Promise<TargetList>
-  updateTargetList: (id: string, data: { name?: string; urls?: string[] }) => Promise<TargetList>
+  createTargetList: (name: string, urls: string[], folder?: string) => Promise<TargetList>
+  updateTargetList: (id: string, data: { name?: string; urls?: string[]; pinned?: boolean; folder?: string | null }) => Promise<TargetList>
   deleteTargetList: (id: string) => Promise<void>
-  createCheckTemplate: (name: string, checks: { selector: string; label: string }[]) => Promise<CheckTemplate>
+  createCheckTemplate: (name: string, checks: SelectorCheck[], folder?: string) => Promise<CheckTemplate>
   updateCheckTemplate: (
     id: string,
-    data: { name?: string; checks?: { selector: string; label: string }[] },
+    data: { name?: string; checks?: SelectorCheck[]; pinned?: boolean; folder?: string | null },
   ) => Promise<CheckTemplate>
-  patchCheckTemplate: (id: string, data: { name?: string; checks?: { selector: string; label: string }[] }) => void
+  patchCheckTemplate: (id: string, data: { name?: string; checks?: SelectorCheck[] }) => void
   deleteCheckTemplate: (id: string) => Promise<void>
   createAudit: (
     name: string,
@@ -26,10 +26,11 @@ export interface StoreActions {
     config: Audit['config'],
     originOverride?: string,
     urlPostfix?: string,
+    folder?: string,
   ) => Promise<Audit>
   updateAudit: (
     id: string,
-    data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string },
+    data: { name?: string; config?: Audit['config']; originOverride?: string; urlPostfix?: string; pinned?: boolean; folder?: string | null; baselineRunId?: string | null },
   ) => Promise<Audit>
   deleteAudit: (id: string) => Promise<void>
   reload: () => Promise<void>

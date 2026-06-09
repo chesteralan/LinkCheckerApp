@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
@@ -11,7 +11,7 @@ const modes = [
 
 export function AuditsPage() {
   const navigate = useNavigate()
-  const { audits, targetLists, checkTemplates, loading, createAudit } = useStore()
+  const { audits, targetLists, checkTemplates, loading, createAudit, updateAudit, deleteAudit } = useStore()
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [targetListId, setTargetListId] = useState('')
@@ -19,9 +19,19 @@ export function AuditsPage() {
   const [mode, setMode] = useState<'sequential' | 'batch'>('batch')
   const [batchSize, setBatchSize] = useState(5)
   const [timeoutSecs, setTimeoutSecs] = useState(10)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [folderFilter, setFolderFilter] = useState('')
+  const [folderName, setFolderName] = useState('')
+
+  const folders = useMemo(() => {
+    const f = new Set<string>()
+    for (const a of audits) if (a.folder) f.add(a.folder)
+    return [...f].sort()
+  }, [audits])
 
   function resetForm() {
     setName('')
+    setFolderName('')
     setTargetListId('')
     setCheckTemplateId('')
     setMode('batch')
@@ -36,7 +46,9 @@ export function AuditsPage() {
       mode,
       batchSize,
       timeoutSecs,
-    })
+      headers: {},
+      cookies: [],
+    }, undefined, undefined, folderName || undefined)
     resetForm()
   }
 
@@ -156,6 +168,21 @@ export function AuditsPage() {
             </div>
           </div>
 
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">Folder</label>
+            <input
+              type="text"
+              placeholder="e.g. Production, Staging"
+              value={folderName}
+              onChange={(e) => setFolderName(e.target.value)}
+              list="folder-suggestions-a"
+              className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <datalist id="folder-suggestions-a">
+              {folders.map((f) => <option key={f} value={f} />)}
+            </datalist>
+          </div>
+
           <div className="flex gap-2">
             <button
               onClick={handleCreate}
@@ -174,28 +201,87 @@ export function AuditsPage() {
         </div>
       </Modal>
 
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-md text-sm">
+          <span className="text-muted-foreground">{selectedIds.size} selected</span>
+          <button
+            onClick={async () => {
+              for (const id of selectedIds) {
+                await deleteAudit(id)
+              }
+              setSelectedIds(new Set())
+            }}
+            className="ml-auto px-3 py-1 text-xs border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
+          >
+            Delete Selected
+          </button>
+          <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1 text-xs border border-border rounded-md hover:bg-muted transition-colors">
+            Clear
+          </button>
+        </div>
+      )}
+
+      {folders.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          <button onClick={() => setFolderFilter('')} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${!folderFilter ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+            All
+          </button>
+          {folders.map((f) => (
+            <button key={f} onClick={() => setFolderFilter(f)} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${folderFilter === f ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {audits.map((audit) => {
+        {[...audits]
+          .filter((a) => !folderFilter || a.folder === folderFilter)
+          .sort((a, b) => Number(b.pinned) - Number(a.pinned))
+          .map((audit) => {
           const tl = targetLists.find((t) => t.id === audit.targetListId)
           const ct = checkTemplates.find((c) => c.id === audit.checkTemplateId)
           return (
-            <button
-              key={audit.id}
-              onClick={() => navigate(`/audits/${audit.id}`)}
-              className="text-left border border-border rounded-lg p-4 hover:border-primary transition-colors"
-            >
-              <h3 className="font-medium">{audit.name}</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                {tl?.name ?? 'Unknown list'} → {ct?.name ?? 'Unknown template'}
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {audit.config.mode === 'sequential' ? 'Sequential' : `Batch x${audit.config.batchSize}`}
-                {' · '}
-                {audit.config.timeoutSecs}s timeout
-                {audit.originOverride && ` · ${audit.originOverride}`}
-                {audit.urlPostfix && ` · +${audit.urlPostfix}`}
-              </p>
-            </button>
+            <div key={audit.id} className="border border-border rounded-lg p-4 hover:border-primary transition-colors relative">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(audit.id)}
+                  onChange={() => {
+                    const next = new Set(selectedIds)
+                    if (next.has(audit.id)) next.delete(audit.id)
+                    else next.add(audit.id)
+                    setSelectedIds(next)
+                  }}
+                  className="accent-primary mt-0.5 shrink-0"
+                />
+                <div className="flex-1 cursor-pointer" onClick={() => navigate(`/audits/${audit.id}`)}>
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-medium">{audit.name}{audit.folder && <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{audit.folder}</span>}</h3>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        updateAudit(audit.id, { pinned: !audit.pinned })
+                      }}
+                      className="text-sm hover:scale-110 transition-transform"
+                      title={audit.pinned ? 'Unpin' : 'Pin'}
+                    >
+                      {audit.pinned ? '★' : '☆'}
+                    </button>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {tl?.name ?? 'Unknown list'} → {ct?.name ?? 'Unknown template'}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {audit.config.mode === 'sequential' ? 'Sequential' : `Batch x${audit.config.batchSize}`}
+                    {' · '}
+                    {audit.config.timeoutSecs}s timeout
+                    {audit.originOverride && ` · ${audit.originOverride}`}
+                    {audit.urlPostfix && ` · +${audit.urlPostfix}`}
+                  </p>
+                </div>
+              </div>
+            </div>
           )
         })}
         {audits.length === 0 && (

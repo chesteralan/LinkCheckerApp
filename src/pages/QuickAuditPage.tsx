@@ -21,6 +21,12 @@ export function QuickAuditPage() {
   const [mode, setMode] = useState<'sequential' | 'batch'>('batch')
   const [batchSize, setBatchSize] = useState(5)
   const [timeoutSecs, setTimeoutSecs] = useState(10)
+  const [headers, setHeaders] = useState<Record<string, string>>({})
+  const [headerKey, setHeaderKey] = useState('')
+  const [headerVal, setHeaderVal] = useState('')
+  const [cookies, setCookies] = useState<{ key: string; value: string }[]>([])
+  const [cookieKey, setCookieKey] = useState('')
+  const [cookieVal, setCookieVal] = useState('')
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [saveAuditName, setSaveAuditName] = useState('')
   const [saveTargetListName, setSaveTargetListName] = useState('')
@@ -42,7 +48,7 @@ export function QuickAuditPage() {
       .filter(Boolean)
     if (urls.length === 0) return
     const tl = await createTargetList(tlName, urls)
-    await createAudit(name, tl.id, t.id, { mode, batchSize, timeoutSecs })
+      await createAudit(name, tl.id, t.id, { mode, batchSize, timeoutSecs, headers, cookies })
     setShowSaveModal(false)
     setSaveAuditName('')
     setSaveTargetListName('')
@@ -54,7 +60,7 @@ export function QuickAuditPage() {
       .map((u) => normalizeUrl(u))
       .filter(Boolean)
     if (urls.length === 0) return
-    await runner.startQuick(urls, t.checks, { mode, batchSize, timeoutSecs }, undefined, undefined, `/check-templates/${t.id}/quick-audit`)
+    await runner.startQuick(urls, t.checks, { mode, batchSize, timeoutSecs, headers, cookies }, undefined, undefined, `/check-templates/${t.id}/quick-audit`)
   }
 
   return (
@@ -176,6 +182,106 @@ export function QuickAuditPage() {
           />
         </div>
       </div>
+
+      <details className="border border-border rounded-lg p-3 text-sm">
+        <summary className="cursor-pointer text-muted-foreground hover:text-foreground font-medium">
+          Custom Headers {Object.keys(headers).length > 0 && `(${Object.keys(headers).length})`}
+        </summary>
+        <div className="mt-3 space-y-2">
+          {Object.entries(headers).map(([k, v]) => (
+            <div key={k} className="flex items-center gap-2 text-xs font-mono">
+              <span className="text-primary">{k}</span>
+              <span className="text-muted-foreground">:</span>
+              <span className="flex-1 truncate">{v}</span>
+              <button
+                onClick={() => {
+                  const next = { ...headers }
+                  delete next[k]
+                  setHeaders(next)
+                }}
+                className="text-destructive hover:underline shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Header-Name"
+              value={headerKey}
+              onChange={(e) => setHeaderKey(e.target.value)}
+              className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <input
+              type="text"
+              placeholder="Value"
+              value={headerVal}
+              onChange={(e) => setHeaderVal(e.target.value)}
+              className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <button
+              onClick={() => {
+                if (!headerKey.trim()) return
+                setHeaders((prev) => ({ ...prev, [headerKey.trim()]: headerVal }))
+                setHeaderKey('')
+                setHeaderVal('')
+              }}
+              className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs font-medium hover:opacity-90 transition-opacity shrink-0"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      </details>
+
+      <details className="border border-border rounded-lg p-3 text-sm">
+        <summary className="cursor-pointer text-muted-foreground hover:text-foreground font-medium">
+          Cookies {cookies.length > 0 && `(${cookies.length})`}
+        </summary>
+        <div className="mt-3 space-y-2">
+          {cookies.map((c, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs font-mono">
+              <span className="text-primary">{c.key}</span>
+              <span className="text-muted-foreground">=</span>
+              <span className="flex-1 truncate">{c.value}</span>
+              <button
+                onClick={() => setCookies((prev) => prev.filter((_, j) => j !== i))}
+                className="text-destructive hover:underline shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Name"
+              value={cookieKey}
+              onChange={(e) => setCookieKey(e.target.value)}
+              className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <input
+              type="text"
+              placeholder="Value"
+              value={cookieVal}
+              onChange={(e) => setCookieVal(e.target.value)}
+              className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <button
+              onClick={() => {
+                if (!cookieKey.trim()) return
+                setCookies((prev) => [...prev, { key: cookieKey.trim(), value: cookieVal }])
+                setCookieKey('')
+                setCookieVal('')
+              }}
+              className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs font-medium hover:opacity-90 transition-opacity shrink-0"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      </details>
 
       <div className="flex gap-2">
         {runner.running ? (

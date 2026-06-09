@@ -1,18 +1,38 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
-import { getRunResults } from '@/lib/tauri'
+import { getRunResults, updateAudit, writeFile } from '@/lib/tauri'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import type { AuditRun, SelectorCheck } from '@/types'
+import { save } from '@tauri-apps/plugin-dialog'
+import { VirtualList } from '@/components/VirtualList'
+import { Modal } from '@/components/Modal'
+import type { AuditRun, SelectorCheck, PageResult } from '@/types'
+
+const ITEM_HEIGHT_DETAILED = 100
+const ITEM_HEIGHT_TABLE = 42
 
 export function RunDetailPage() {
   const { runId } = useParams<{ runId: string }>()
   const navigate = useNavigate()
-  const { audits, targetLists, checkTemplates } = useStore()
+  const { audits, targetLists, checkTemplates, createCheckTemplate } = useStore()
   const [run, setRun] = useState<AuditRun | null>(null)
   const [filter, setFilter] = useState<'all' | 'passed' | 'failed' | 'errored'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [view, setView] = useState<'detailed' | 'table'>('detailed')
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const exportRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   useEffect(() => {
     if (runId) {
@@ -37,7 +57,12 @@ export function RunDetailPage() {
     for (const cr of pr.checks) {
       if (!seen.has(cr.selectorCheckId)) {
         seen.add(cr.selectorCheckId)
-        selectors.push({ id: cr.selectorCheckId, selector: cr.selector, label: cr.label })
+        selectors.push({
+          id: cr.selectorCheckId,
+          selector: cr.selector,
+          label: cr.label,
+          checkType: cr.checkType,
+        })
       }
     }
   }
@@ -53,6 +78,35 @@ export function RunDetailPage() {
     return true
   })
 
+  async function handleExport(format: 'json' | 'csv') {
+    setShowExportMenu(false)
+    if (!run) return
+    const ext = format === 'json' ? 'json' : 'csv'
+    const path = await save({ defaultPath: `${audit?.name ?? 'run'}-${runId}.${ext}`, filters: [{ name: format.toUpperCase(), extensions: [ext] }] })
+    if (!path) return
+    const content = format === 'json'
+      ? JSON.stringify(run, null, 2)
+      : [
+          'URL,Page Title,Status,Status Text,Response Time (ms),Error,Check Label,Check Type,Found,Count',
+          ...run.results.flatMap((r) =>
+            r.checks.length > 0
+              ? r.checks.map((c) =>
+                  [r.url, r.pageTitle ?? '', r.status ?? '', r.statusText, r.responseTimeMs ?? '', r.error ?? '', c.label, c.checkType, c.found, c.count].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')
+                )
+              : [[r.url, r.pageTitle ?? '', r.status ?? '', r.statusText, r.responseTimeMs ?? '', r.error ?? '', '', '', '', ''].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')]
+          ).join('\n'),
+        ].join('\n')
+    await writeFile(path, content)
+  }
+
+  async function handleSaveTemplate() {
+    if (!templateName.trim() || selectors.length === 0) return
+    const created = await createCheckTemplate(templateName.trim(), selectors)
+    setShowSaveTemplate(false)
+    setTemplateName('')
+    navigate(`/check-templates/${created.id}`)
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -62,7 +116,47 @@ export function RunDetailPage() {
           </button>
           <h2 className="text-2xl font-bold">{audit?.name ?? 'Quick Audit'}</h2>
         </div>
-        <span
+        <div className="flex items-center gap-2">
+          {selectors.length > 0 && (
+            <button
+              onClick={() => {
+                setTemplateName((audit?.name ?? 'Quick Audit') + ' - Template')
+                setShowSaveTemplate(true)
+              }}
+              className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors"
+            >
+              Save as Template
+            </button>
+          )}
+          {audit && (
+            <button
+              onClick={async () => {
+                await updateAudit({ id: audit.id, baselineRunId: run.id })
+              }}
+              className={`text-xs px-3 py-1 border rounded-md transition-colors ${
+                audit.baselineRunId === run.id
+                  ? 'border-primary text-primary bg-primary/10'
+                  : 'border-border hover:bg-muted'
+              }`}
+            >
+              {audit.baselineRunId === run.id ? '★ Baseline' : 'Set as Baseline'}
+            </button>
+          )}
+          <div className="relative" ref={exportRef}>
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors"
+            >
+              Export
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 top-full mt-1 bg-popover border border-border rounded-md shadow-lg z-50 min-w-[100px]">
+                <button onClick={() => handleExport('json')} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors">JSON</button>
+                <button onClick={() => handleExport('csv')} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors">CSV</button>
+              </div>
+            )}
+          </div>
+          <span
           className={`text-xs px-2 py-0.5 rounded-full ${
             run.status === 'completed'
               ? 'bg-success/10 text-success'
@@ -75,6 +169,7 @@ export function RunDetailPage() {
         >
           {run.status}
         </span>
+        </div>
       </div>
 
       <div className="flex items-center justify-between text-sm text-muted-foreground">
@@ -145,139 +240,198 @@ export function RunDetailPage() {
       </div>
 
       {view === 'detailed' ? (
-        <div className="space-y-2">
-          {displayedResults.map((result) => (
-            <div key={result.url} className="border border-border rounded-lg p-4 space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span
-                    className={`w-2 h-2 shrink-0 rounded-full ${
-                      result.error
-                        ? 'bg-destructive'
-                        : result.checks.every((c) => c.found)
-                          ? 'bg-success'
-                          : 'bg-destructive'
-                    }`}
-                  />
-                  <button
-                    onClick={() => openUrl(result.url)}
-                    className="text-sm font-mono text-primary hover:underline truncate cursor-pointer"
-                    title={result.url}
-                  >
-                    {result.url}
-                  </button>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  {result.status &&
-                    (result.error ? (
-                      <span className="text-xs text-destructive">Error</span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">{result.status}</span>
-                    ))}
-                  {result.responseTimeMs != null && (
-                    <span className="text-xs text-muted-foreground">{result.responseTimeMs}ms</span>
-                  )}
-                </div>
-              </div>
-              {result.error && <p className="text-xs text-destructive">{result.error}</p>}
-              {result.pageTitle && <p className="text-xs text-muted-foreground">{result.pageTitle}</p>}
-              {result.checks.length > 0 && (
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {result.checks.map((cr) => (
+        displayedResults.length > 0 ? (
+          <VirtualList<PageResult>
+            items={displayedResults}
+            itemHeight={ITEM_HEIGHT_DETAILED}
+            className="overflow-y-auto h-full space-y-2"
+            renderItem={(result) => (
+              <div key={result.url} className="border border-border rounded-lg p-4 space-y-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span
-                      key={cr.selectorCheckId}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full ${
-                        cr.found ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
+                      className={`w-2 h-2 shrink-0 rounded-full ${
+                        result.error
+                          ? 'bg-destructive'
+                          : result.checks.every((c) => c.found)
+                            ? 'bg-success'
+                            : 'bg-destructive'
                       }`}
+                    />
+                    <button
+                      onClick={() => openUrl(result.url)}
+                      className="text-sm font-mono text-primary hover:underline truncate cursor-pointer"
+                      title={result.url}
                     >
-                      <span>{cr.found ? '✓' : '✗'}</span>
-                      <span>{cr.label}</span>
-                      {cr.textContent && <span className="opacity-70">— {cr.textContent}</span>}
-                    </span>
-                  ))}
+                      {result.url}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {result.status &&
+                      (result.error ? (
+                        <span className="text-xs text-destructive">Error</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">{result.status}</span>
+                      ))}
+                    {result.responseTimeMs != null && (
+                      <span className="text-xs text-muted-foreground">{result.responseTimeMs}ms</span>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
-          {displayedResults.length === 0 && (
-            <p className="text-sm text-muted-foreground">No results match the current filter.</p>
-          )}
-        </div>
+                {result.error && <p className="text-xs text-destructive">{result.error}</p>}
+                {result.pageTitle && <p className="text-xs text-muted-foreground">{result.pageTitle}</p>}
+                {result.checks.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {result.checks.map((cr) => (
+                      <span
+                        key={cr.selectorCheckId}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full ${
+                          cr.found ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
+                        }`}
+                      >
+                        <span>{cr.found ? '✓' : '✗'}</span>
+                        <span>{cr.label}</span>
+                        <span className="opacity-50 text-[10px] uppercase">{cr.checkType}</span>
+                        {cr.textContent && <span className="opacity-70">— {cr.textContent}</span>}
+                        {cr.checkType === 'accessibility' && cr.a11yIssues && cr.a11yIssues.length > 0 && (
+                          <details className="ml-2 inline-block align-middle relative">
+                            <summary className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground">
+                              {cr.a11yIssues.length} issue{cr.a11yIssues.length > 1 ? 's' : ''}
+                            </summary>
+                            <div className="absolute z-50 mt-1 w-80 bg-popover border border-border rounded-md shadow-lg p-2 text-[10px] space-y-1">
+                              {cr.a11yIssues.map((issue, i) => (
+                                <div key={i} className="flex items-start gap-1">
+                                  <span className="text-muted-foreground">{issue.message}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">No results match the current filter.</p>
+        )
       ) : (
         <div className="border border-border rounded-lg overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
             <thead>
               <tr className="bg-muted/50 text-left">
-                <th className="px-3 py-2 font-medium">URL</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Time</th>
-                <th className="px-3 py-2 font-medium">Title</th>
+                <th className="px-3 py-2 font-medium w-64 resize-x overflow-hidden">URL</th>
+                <th className="px-3 py-2 font-medium w-20 resize-x overflow-hidden">Status</th>
+                <th className="px-3 py-2 font-medium w-20 resize-x overflow-hidden">Time</th>
+                <th className="px-3 py-2 font-medium w-48 resize-x overflow-hidden">Title</th>
                 {selectors.map((sel) => (
-                  <th key={sel.id} className="px-3 py-2 font-medium">
+                  <th key={sel.id} className="px-3 py-2 font-medium min-w-24 resize-x overflow-hidden">
                     {sel.label}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {displayedResults.map((result) => (
-                <tr key={result.url} className="hover:bg-muted/30">
-                  <td className="px-3 py-2">
-                    <button
-                      onClick={() => openUrl(result.url)}
-                      className="text-primary hover:underline text-xs font-mono truncate max-w-[300px] block"
-                      title={result.url}
-                    >
-                      {result.url}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 text-xs">
-                    {result.error ? <span className="text-destructive">Error</span> : result.status}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">{result.responseTimeMs}ms</td>
-                  <td
-                    className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[200px]"
-                    title={result.pageTitle ?? undefined}
-                  >
-                    {result.pageTitle ?? '—'}
-                  </td>
-                  {selectors.map((sel) => {
-                    const cr = result.checks.find((c) => c.selectorCheckId === sel.id)
-                    return (
-                      <td key={sel.id} className="px-3 py-2 text-xs">
-                        {!cr ? (
-                          <span className="text-muted-foreground">—</span>
-                        ) : cr.found ? (
-                          <span className="text-success">
-                            ✓
-                            {cr.textContent ? (
-                              <span className="text-muted-foreground ml-1">({cr.textContent})</span>
-                            ) : (
-                              ''
-                            )}
-                          </span>
-                        ) : (
-                          <span className="text-destructive">
-                            ✗
-                            {cr.textContent ? (
-                              <span className="text-muted-foreground ml-1">({cr.textContent})</span>
-                            ) : (
-                              ''
-                            )}
-                          </span>
-                        )}
+              {displayedResults.length > 0 ? (
+                <VirtualList<PageResult>
+                  items={displayedResults}
+                  itemHeight={ITEM_HEIGHT_TABLE}
+                  renderItem={(result) => (
+                    <tr key={result.url} className="hover:bg-muted/30" style={{ height: ITEM_HEIGHT_TABLE }}>
+                      <td className="px-3 py-2">
+                        <button
+                          onClick={() => openUrl(result.url)}
+                          className="text-primary hover:underline text-xs font-mono truncate max-w-[300px] block"
+                          title={result.url}
+                        >
+                          {result.url}
+                        </button>
                       </td>
-                    )
-                  })}
+                      <td className="px-3 py-2 text-xs">
+                        {result.error ? <span className="text-destructive">Error</span> : result.status}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{result.responseTimeMs}ms</td>
+                      <td
+                        className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[200px]"
+                        title={result.pageTitle ?? undefined}
+                      >
+                        {result.pageTitle ?? '—'}
+                      </td>
+                      {selectors.map((sel) => {
+                        const cr = result.checks.find((c) => c.selectorCheckId === sel.id)
+                        return (
+                          <td key={sel.id} className="px-3 py-2 text-xs">
+                            {!cr ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : cr.found ? (
+                              <span className="text-success">
+                                ✓
+                                {cr.textContent ? (
+                                  <span className="text-muted-foreground ml-1">({cr.textContent})</span>
+                                ) : (
+                                  ''
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-destructive">
+                                ✗
+                                {cr.textContent ? (
+                                  <span className="text-muted-foreground ml-1">({cr.textContent})</span>
+                                ) : (
+                                  ''
+                                )}
+                              </span>
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )}
+                />
+              ) : (
+                <tr>
+                  <td colSpan={4 + selectors.length} className="p-4 text-sm text-muted-foreground">
+                    No results match the current filter.
+                  </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
-          {displayedResults.length === 0 && (
-            <p className="text-sm text-muted-foreground p-4">No results match the current filter.</p>
-          )}
         </div>
       )}
+
+      <Modal open={showSaveTemplate} onClose={() => setShowSaveTemplate(false)} title="Save as Check Template">
+        <div className="space-y-4">
+          <input
+            type="text"
+            placeholder="Template name"
+            value={templateName}
+            onChange={(e) => setTemplateName(e.target.value)}
+            autoFocus
+            className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <p className="text-xs text-muted-foreground">
+            Template will include {selectors.length} check{selectors.length !== 1 ? 's' : ''} from this run.
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={handleSaveTemplate}
+              disabled={!templateName.trim()}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              Create Template
+            </button>
+            <button
+              onClick={() => setShowSaveTemplate(false)}
+              className="px-4 py-2 border border-border rounded-md text-sm hover:bg-muted transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Sidebar } from '@/components/Sidebar'
+import { Modal } from '@/components/Modal'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { TargetListsPage } from '@/pages/TargetListsPage'
 import { CheckTemplatesPage } from '@/pages/CheckTemplatesPage'
@@ -9,18 +10,35 @@ import { AuditsPage } from '@/pages/AuditsPage'
 import { AuditDetailPage } from '@/pages/AuditDetailPage'
 import { RunHistoryPage } from '@/pages/RunHistoryPage'
 import { RunDetailPage } from '@/pages/RunDetailPage'
+import { RunDiffPage } from '@/pages/RunDiffPage'
 import { QuickAuditPage } from '@/pages/QuickAuditPage'
+import { LinkCheckerPage } from '@/pages/LinkCheckerPage'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useRun } from '@/hooks/useRun'
+import { useTheme } from '@/hooks/ThemeContext'
 import { getDataPath, openDataFolder } from '@/lib/tauri'
 import { HOTKEY_NAV } from '@/utils/constants'
 
 declare const __APP_VERSION__: string
 
+const SHORTCUTS = [
+  { key: '1', action: 'Navigate to Check Templates' },
+  { key: '2', action: 'Navigate to Target Lists' },
+  { key: '3', action: 'Navigate to Audits' },
+  { key: '4', action: 'Navigate to Run History' },
+  { key: '5', action: 'Navigate to Link Checker' },
+  { key: 'Escape', action: 'Close modal / Cancel' },
+  { key: 'Cmd+Enter', action: 'Submit form' },
+  { key: '?', action: 'Toggle this shortcut reference' },
+  { key: '⌘K', action: 'Focus global search' },
+]
+
 function App() {
   const navigate = useNavigate()
   const [dataPath, setDataPath] = useState('')
+  const [showShortcuts, setShowShortcuts] = useState(false)
   const { running, runPagePath, progress, cancel } = useRun()
+  const { theme, setTheme } = useTheme()
 
   useEffect(() => {
     getDataPath()
@@ -28,7 +46,16 @@ function App() {
       .catch(() => {})
   }, [])
 
-  useHotkeys(Object.fromEntries(Object.entries(HOTKEY_NAV).map(([key, path]) => [key, () => navigate(path)])))
+  useHotkeys({
+    ...Object.fromEntries(Object.entries(HOTKEY_NAV).map(([key, path]) => [key, () => navigate(path)])),
+    '?': () => setShowShortcuts((s) => !s),
+  })
+
+  const cycleTheme = () => {
+    setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light')
+  }
+
+  const themeIcon = theme === 'light' ? '☀' : theme === 'dark' ? '☾' : '⚙'
 
   return (
     <div className="h-screen flex flex-col">
@@ -70,8 +97,24 @@ function App() {
             </button>
           </div>
         ) : (
-          <span className="text-xs text-muted-foreground">1-4 to navigate</span>
+          <span className="text-xs text-muted-foreground">? for shortcuts</span>
         )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={cycleTheme}
+            className="text-sm px-2 py-1 rounded-md border border-border hover:bg-muted transition-colors"
+            title={`Theme: ${theme}`}
+          >
+            {themeIcon}
+          </button>
+          <button
+            onClick={() => setShowShortcuts(true)}
+            className="text-xs px-2 py-1 rounded-md border border-border hover:bg-muted transition-colors font-mono"
+            title="Keyboard shortcuts"
+          >
+            ?
+          </button>
+        </div>
       </header>
       <div className="flex flex-1 min-h-0">
         <Sidebar />
@@ -87,6 +130,8 @@ function App() {
               <Route path="/audits/:id" element={<AuditDetailPage />} />
               <Route path="/history" element={<RunHistoryPage />} />
               <Route path="/history/:runId" element={<RunDetailPage />} />
+              <Route path="/history/diff/:runIdA/:runIdB" element={<RunDiffPage />} />
+              <Route path="/link-checker" element={<LinkCheckerPage />} />
             </Routes>
           </ErrorBoundary>
         </main>
@@ -101,6 +146,17 @@ function App() {
           {dataPath || '...'}
         </button>
       </footer>
+
+      <Modal open={showShortcuts} onClose={() => setShowShortcuts(false)} title="Keyboard Shortcuts">
+        <div className="space-y-2">
+          {SHORTCUTS.map((s) => (
+            <div key={s.key} className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">{s.action}</span>
+              <kbd className="px-2 py-0.5 bg-muted rounded text-xs font-mono border border-border">{s.key}</kbd>
+            </div>
+          ))}
+        </div>
+      </Modal>
     </div>
   )
 }

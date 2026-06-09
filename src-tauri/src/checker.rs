@@ -1,10 +1,11 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Semaphore;
 
 use crate::models::*;
+use crate::AppState;
 
 pub struct Checker {
     cancel_flag: Arc<AtomicBool>,
@@ -43,11 +44,39 @@ impl Checker {
             _ => Arc::new(Semaphore::new(audit.config.batch_size as usize)),
         };
 
-        let client = reqwest::Client::builder()
+        let mut client_builder = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(audit.config.timeout_secs))
-            .redirect(reqwest::redirect::Policy::limited(10))
-            .build()
-            .expect("failed to build HTTP client");
+            .redirect(reqwest::redirect::Policy::limited(10));
+        if !audit.config.headers.is_empty() {
+            let mut headers = reqwest::header::HeaderMap::new();
+            for (key, value) in &audit.config.headers {
+                if let (Ok(k), Ok(v)) = (
+                    reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                    reqwest::header::HeaderValue::from_str(value),
+                ) {
+                    headers.insert(k, v);
+                }
+            }
+            client_builder = client_builder.default_headers(headers);
+        }
+        if !audit.config.cookies.is_empty() {
+            let cookie_str: String = audit
+                .config
+                .cookies
+                .iter()
+                .map(|kv| format!("{}={}", kv.key, kv.value))
+                .collect::<Vec<_>>()
+                .join("; ");
+            if let Ok(v) = reqwest::header::HeaderValue::from_str(&cookie_str) {
+                client_builder = client_builder.default_headers(
+                    reqwest::header::HeaderMap::from_iter([(
+                        reqwest::header::COOKIE,
+                        v,
+                    )]),
+                );
+            }
+        }
+        let client = client_builder.build().expect("failed to build HTTP client");
 
         let results = Arc::new(std::sync::Mutex::new(Vec::with_capacity(total)));
         let checked = Arc::new(std::sync::Mutex::new(0usize));
@@ -68,6 +97,9 @@ impl Checker {
             let results = results.clone();
             let checked = checked.clone();
             let app = app.clone();
+            let run_id = run_id.clone();
+            let audit_id = audit.id.clone();
+            let started_at = started_at.clone();
 
             fetches.push(tokio::spawn(async move {
                 let _permit = permit;
@@ -82,6 +114,19 @@ impl Checker {
                     "total": total,
                 }));
                 let _ = app.emit("run:result", &page_result);
+
+                let partial = AuditRun {
+                    id: run_id.clone(),
+                    audit_id: audit_id.clone(),
+                    started_at: started_at.clone(),
+                    completed_at: None,
+                    status: "running".into(),
+                    results: results.clone(),
+                    summary: compute_summary(&results),
+                };
+                if let Some(state) = app.try_state::<AppState>() {
+                    let _ = state.storage.save_run(&partial);
+                }
             }));
         }
 
@@ -149,7 +194,7 @@ async fn check_url(
 
             match response.text().await {
                 Ok(html) => {
-                    let check_results = run_selectors(&html, &checks);
+                    let check_results = run_checks(status_code, &html, &url, &checks);
                     PageResult {
                         page_title: extract_title(&html),
                         url,
@@ -186,43 +231,338 @@ async fn check_url(
     }
 }
 
-fn run_selectors(html: &str, checks: &[SelectorCheck]) -> Vec<SelectorResult> {
-    let document = scraper::Html::parse_document(html);
+fn run_checks(status_code: u16, html: &str, page_url: &str, checks: &[SelectorCheck]) -> Vec<SelectorResult> {
     checks
         .iter()
         .map(|check| {
-            let selector = scraper::Selector::parse(&check.selector);
-            match selector {
-                Ok(sel) => {
-                    let matches: Vec<_> = document.select(&sel).collect();
-                    let count = matches.len();
-                    let text_content = matches
-                        .first()
-                        .and_then(|el| {
-                            let text: String = el.text().collect::<Vec<_>>().join(" ");
-                            if text.is_empty() { None } else { Some(text) }
-                        });
-
-                    SelectorResult {
-                        selector_check_id: check.id.clone(),
-                        selector: check.selector.clone(),
-                        label: check.label.clone(),
-                        found: count > 0,
-                        count,
-                        text_content,
-                    }
-                }
-                Err(_) => SelectorResult {
-                    selector_check_id: check.id.clone(),
-                    selector: check.selector.clone(),
-                    label: check.label.clone(),
-                    found: false,
-                    count: 0,
-                    text_content: None,
-                },
+            let check_type = &check.check_type;
+            match check_type {
+                CheckType::Status => run_status_check(check, status_code),
+                CheckType::Regex => run_regex_check(check, html),
+                CheckType::Attribute => run_attribute_check(check, html),
+                CheckType::Selector => run_selector_check(check, html),
+                CheckType::Accessibility => run_accessibility_check(check, html),
+                CheckType::JavaScript => run_js_check(check, html, page_url),
             }
         })
         .collect()
+}
+
+fn run_selector_check(check: &SelectorCheck, html: &str) -> SelectorResult {
+    let document = scraper::Html::parse_document(html);
+    match scraper::Selector::parse(&check.selector) {
+        Ok(sel) => {
+            let matches: Vec<_> = document.select(&sel).collect();
+            let count = matches.len();
+            let text_content = matches.first().and_then(|el| {
+                let text: String = el.text().collect::<Vec<_>>().join(" ");
+                if text.is_empty() { None } else { Some(text) }
+            });
+            SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found: count > 0,
+                count,
+                text_content,
+                check_type: CheckType::Selector,
+                a11y_issues: vec![],
+            }
+        }
+        Err(_) => SelectorResult {
+            selector_check_id: check.id.clone(),
+            selector: check.selector.clone(),
+            label: check.label.clone(),
+            found: false,
+            count: 0,
+            text_content: None,
+            check_type: CheckType::Selector,
+            a11y_issues: vec![],
+        },
+    }
+}
+
+fn run_status_check(check: &SelectorCheck, status_code: u16) -> SelectorResult {
+    let expected = check.expected_status.unwrap_or(200);
+    let found = status_code == expected;
+    SelectorResult {
+        selector_check_id: check.id.clone(),
+        selector: check.selector.clone(),
+        label: check.label.clone(),
+        found,
+        count: if found { 1 } else { 0 },
+        text_content: Some(format!("HTTP {}", status_code)),
+        check_type: CheckType::Status,
+        a11y_issues: vec![],
+    }
+}
+
+fn run_regex_check(check: &SelectorCheck, html: &str) -> SelectorResult {
+    let pattern = match &check.pattern {
+        Some(p) if !p.is_empty() => p,
+        _ => {
+            return SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found: false,
+                count: 0,
+                text_content: None,
+                check_type: CheckType::Regex,
+                a11y_issues: vec![],
+            }
+        }
+    };
+    match ::regex::Regex::new(pattern) {
+        Ok(re) => {
+            let count = re.find_iter(html).count();
+            SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found: count > 0,
+                count,
+                text_content: re.find(html).map(|m| m.as_str().to_string()),
+                check_type: CheckType::Regex,
+                a11y_issues: vec![],
+            }
+        }
+        Err(e) => SelectorResult {
+            selector_check_id: check.id.clone(),
+            selector: check.selector.clone(),
+            label: check.label.clone(),
+            found: false,
+            count: 0,
+            text_content: Some(format!("invalid regex: {}", e)),
+            check_type: CheckType::Regex,
+            a11y_issues: vec![],
+        },
+    }
+}
+
+fn run_attribute_check(check: &SelectorCheck, html: &str) -> SelectorResult {
+    let document = scraper::Html::parse_document(html);
+    let attr = match &check.attribute_name {
+        Some(a) if !a.is_empty() => a.clone(),
+        _ => {
+            return SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found: false,
+                count: 0,
+                text_content: None,
+                check_type: CheckType::Attribute,
+                a11y_issues: vec![],
+            }
+        }
+    };
+    match scraper::Selector::parse(&check.selector) {
+        Ok(sel) => {
+            let mut count = 0usize;
+            let mut texts: Vec<String> = Vec::new();
+            for el in document.select(&sel) {
+                if let Some(val) = el.value().attr(&attr) {
+                    count += 1;
+                    if let Some(ref expected) = check.attribute_value {
+                        if val == expected {
+                            texts.push(format!("{}={}", attr, val));
+                        }
+                    } else {
+                        texts.push(format!("{}={}", attr, val));
+                    }
+                }
+            }
+            let found = if let Some(ref expected) = check.attribute_value {
+                texts.iter().any(|t| t.contains(expected))
+            } else {
+                count > 0
+            };
+            SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found,
+                count,
+                text_content: if texts.is_empty() { None } else { Some(texts.join(", ")) },
+                check_type: CheckType::Attribute,
+                a11y_issues: vec![],
+            }
+        }
+        Err(_) => SelectorResult {
+            selector_check_id: check.id.clone(),
+            selector: check.selector.clone(),
+            label: check.label.clone(),
+            found: false,
+            count: 0,
+            text_content: None,
+            check_type: CheckType::Attribute,
+            a11y_issues: vec![],
+        },
+    }
+}
+
+fn run_accessibility_check(check: &SelectorCheck, html: &str) -> SelectorResult {
+    let document = scraper::Html::parse_document(html);
+    let mut issues = Vec::new();
+
+    // 1. Images without alt text
+    if let Ok(img_sel) = scraper::Selector::parse("img:not([alt]), img[alt='']") {
+        for el in document.select(&img_sel) {
+            let tag = el.value().name().to_string();
+            let id_attr = el.value().attr("id").map(|s| format!("#{}", s)).unwrap_or_default();
+            issues.push(crate::models::A11yIssue {
+                issue_type: "missing-alt".into(),
+                element: tag.clone(),
+                selector: format!("{}{}", tag, id_attr),
+                message: "Image is missing alt text".to_string(),
+            });
+        }
+    }
+
+    // 2. Empty links
+    if let Ok(empty_a_sel) = scraper::Selector::parse("a:not([href]), a[href='']") {
+        for el in document.select(&empty_a_sel) {
+            let id_attr = el.value().attr("id").map(|s| format!("#{}", s)).unwrap_or_default();
+            issues.push(crate::models::A11yIssue {
+                issue_type: "empty-link".into(),
+                element: "a".into(),
+                selector: format!("a{}", id_attr),
+                message: "Link has no href or empty href".into(),
+            });
+        }
+    }
+
+    // 3. Buttons without accessible name
+    if let Ok(btn_sel) = scraper::Selector::parse("button:not([aria-label]):not([aria-labelledby])") {
+        for el in document.select(&btn_sel) {
+            let text = el.text().collect::<String>().trim().to_string();
+            let id_attr = el.value().attr("id").map(|s| format!("#{}", s)).unwrap_or_default();
+            if text.is_empty() {
+                issues.push(crate::models::A11yIssue {
+                    issue_type: "missing-label".into(),
+                    element: "button".into(),
+                    selector: format!("button{}", id_attr),
+                    message: "Button has no accessible name (no aria-label, aria-labelledby, or text content)".into(),
+                });
+            }
+        }
+    }
+
+    // 4. Missing form labels
+    if let Ok(input_sel) = scraper::Selector::parse("input:not([type=hidden]):not([aria-label]):not([aria-labelledby])") {
+        for el in document.select(&input_sel) {
+            let id_attr = el.value().attr("id").map(|s| s.to_string());
+            let input_type = el.value().attr("type").unwrap_or("text");
+            if let Some(ref id) = id_attr {
+                let label_sel = format!("label[for='{}']", id);
+                let has_label = scraper::Selector::parse(&label_sel)
+                    .ok()
+                    .map(|lbl_sel| document.select(&lbl_sel).next().is_some())
+                    .unwrap_or(false);
+                if !has_label {
+                    issues.push(crate::models::A11yIssue {
+                        issue_type: "missing-label".into(),
+                        element: format!("input[type={}]", input_type),
+                        selector: format!("#{}", id),
+                        message: format!("Input #{} has no associated label", id),
+                    });
+                }
+            } else {
+                issues.push(crate::models::A11yIssue {
+                    issue_type: "missing-label".into(),
+                    element: format!("input[type={}]", input_type),
+                    selector: "input".into(),
+                    message: "Input has no id and no aria-label".into(),
+                });
+            }
+        }
+    }
+
+    let found_count = issues.len();
+
+    SelectorResult {
+        selector_check_id: check.id.clone(),
+        selector: check.selector.clone(),
+        label: check.label.clone(),
+        found: found_count == 0,
+        count: found_count,
+        text_content: if found_count > 0 {
+            Some(format!("Found {} accessibility issues", found_count))
+        } else {
+            Some("No issues found".into())
+        },
+        check_type: CheckType::Accessibility,
+        a11y_issues: issues,
+    }
+}
+
+fn run_js_check(check: &SelectorCheck, html: &str, page_url: &str) -> SelectorResult {
+    use boa_engine::{Context, Source};
+    let js_code = match &check.pattern {
+        Some(p) if !p.is_empty() => p.clone(),
+        _ => {
+            return SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found: false,
+                count: 0,
+                text_content: Some("No JS snippet provided".into()),
+                check_type: CheckType::JavaScript,
+                a11y_issues: vec![],
+            }
+        }
+    };
+
+    let document = scraper::Html::parse_document(html);
+    let page_text = document.root_element().text().collect::<String>();
+
+    let mut context = Context::default();
+    if let Err(e) = context.eval(Source::from_bytes(&format!(
+        "const pageText = {}; const pageUrl = {}; const pageTitle = {};",
+        serde_json::to_string(&page_text).unwrap_or_default(),
+        serde_json::to_string(page_url).unwrap_or_default(),
+        serde_json::to_string(&extract_title(html)).unwrap_or_default(),
+    ))) {
+        return SelectorResult {
+            selector_check_id: check.id.clone(),
+            selector: check.selector.clone(),
+            label: check.label.clone(),
+            found: false,
+            count: 0,
+            text_content: Some(format!("Failed to set up context: {}", e)),
+            check_type: CheckType::JavaScript,
+            a11y_issues: vec![],
+        };
+    }
+
+    match context.eval(Source::from_bytes(&js_code)) {
+        Ok(val) => {
+            let pass = val.as_boolean().unwrap_or(false);
+            let display = val.to_string(&mut context).map(|s| s.to_std_string().unwrap_or_default()).unwrap_or_default();
+            SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found: pass,
+                count: if pass { 1 } else { 0 },
+                text_content: Some(display),
+                check_type: CheckType::JavaScript,
+                a11y_issues: vec![],
+            }
+        }
+        Err(e) => SelectorResult {
+            selector_check_id: check.id.clone(),
+            selector: check.selector.clone(),
+            label: check.label.clone(),
+            found: false,
+            count: 0,
+            text_content: Some(format!("JS error: {}", e)),
+            check_type: CheckType::JavaScript,
+            a11y_issues: vec![],
+        },
+    }
 }
 
 fn extract_title(html: &str) -> Option<String> {
@@ -344,7 +684,7 @@ mod tests {
                 url: "https://a.com".into(),
                 error: None,
                 checks: vec![
-                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: Some("Hi".into()) },
+                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: Some("Hi".into()), check_type: CheckType::Selector, a11y_issues: vec![] },
                 ],
                 response_time_ms: Some(100),
                 page_title: None,
@@ -355,7 +695,7 @@ mod tests {
                 url: "https://b.com".into(),
                 error: None,
                 checks: vec![
-                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: Some("Hi".into()) },
+                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: Some("Hi".into()), check_type: CheckType::Selector, a11y_issues: vec![] },
                 ],
                 response_time_ms: Some(200),
                 page_title: None,
@@ -378,7 +718,7 @@ mod tests {
                 url: "https://a.com".into(),
                 error: None,
                 checks: vec![
-                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: None },
+                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: None, check_type: CheckType::Selector, a11y_issues: vec![] },
                 ],
                 response_time_ms: Some(100),
                 page_title: None,
@@ -389,7 +729,7 @@ mod tests {
                 url: "https://b.com".into(),
                 error: None,
                 checks: vec![
-                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: false, count: 0, text_content: None },
+                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: false, count: 0, text_content: None, check_type: CheckType::Selector, a11y_issues: vec![] },
                 ],
                 response_time_ms: Some(200),
                 page_title: None,
@@ -423,36 +763,118 @@ mod tests {
         assert_eq!(summary.avg_response_time_ms, 0.0);
     }
 
+    fn make_check(id: &str, selector: &str, label: &str) -> SelectorCheck {
+        SelectorCheck {
+            id: id.into(),
+            selector: selector.into(),
+            label: label.into(),
+            check_type: CheckType::Selector,
+            expected_status: None,
+            pattern: None,
+            attribute_name: None,
+            attribute_value: None,
+        }
+    }
+
     #[test]
-    fn test_run_selectors_valid() {
+    fn test_run_checks_valid() {
         let html = "<html><body><h1>Hello</h1><p>World</p></body></html>";
         let checks = vec![
-            SelectorCheck { id: "c1".into(), selector: "h1".into(), label: "Heading".into() },
-            SelectorCheck { id: "c2".into(), selector: "p".into(), label: "Paragraph".into() },
-            SelectorCheck { id: "c3".into(), selector: ".missing".into(), label: "Missing".into() },
+            make_check("c1", "h1", "Heading"),
+            make_check("c2", "p", "Paragraph"),
+            make_check("c3", ".missing", "Missing"),
         ];
-        let results = run_selectors(html, &checks);
+        let results = run_checks(200, html, "https://example.com", &checks);
         assert_eq!(results.len(), 3);
-        assert_eq!(results[0].found, true);
+        assert!(results[0].found);
         assert_eq!(results[0].count, 1);
         assert_eq!(results[0].text_content.as_deref(), Some("Hello"));
-        assert_eq!(results[1].found, true);
+        assert!(results[1].found);
         assert_eq!(results[1].count, 1);
         assert_eq!(results[1].text_content.as_deref(), Some("World"));
-        assert_eq!(results[2].found, false);
+        assert!(!results[2].found);
         assert_eq!(results[2].count, 0);
         assert_eq!(results[2].text_content, None);
     }
 
     #[test]
-    fn test_run_selectors_invalid_selector() {
+    fn test_run_checks_invalid_selector() {
         let html = "<html><body></body></html>";
         let checks = vec![
-            SelectorCheck { id: "c1".into(), selector: "[[invalid".into(), label: "Bad".into() },
+            make_check("c1", "[[invalid", "Bad"),
         ];
-        let results = run_selectors(html, &checks);
+        let results = run_checks(200, html, "https://example.com", &checks);
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].found, false);
+        assert!(!results[0].found);
+    }
+
+    #[test]
+    fn test_run_checks_status() {
+        let check = SelectorCheck {
+            id: "s1".into(),
+            selector: String::new(),
+            label: "Status 200".into(),
+            check_type: CheckType::Status,
+            expected_status: Some(200),
+            pattern: None,
+            attribute_name: None,
+            attribute_value: None,
+        };
+        let results = run_checks(200, "", "https://example.com", &[check]);
+        assert!(results[0].found);
+        assert_eq!(results[0].text_content.as_deref(), Some("HTTP 200"));
+    }
+
+    #[test]
+    fn test_run_checks_regex() {
+        let html = "hello world hello";
+        let check = SelectorCheck {
+            id: "r1".into(),
+            selector: String::new(),
+            label: "Match hello".into(),
+            check_type: CheckType::Regex,
+            expected_status: None,
+            pattern: Some("hello".into()),
+            attribute_name: None,
+            attribute_value: None,
+        };
+        let results = run_checks(200, html, "https://example.com", &[check]);
+        assert!(results[0].found);
+        assert_eq!(results[0].count, 2);
+    }
+
+    #[test]
+    fn test_run_checks_regex_invalid() {
+        let check = SelectorCheck {
+            id: "r2".into(),
+            selector: String::new(),
+            label: "Bad regex".into(),
+            check_type: CheckType::Regex,
+            expected_status: None,
+            pattern: Some("[invalid".into()),
+            attribute_name: None,
+            attribute_value: None,
+        };
+        let results = run_checks(200, "", "https://example.com", &[check]);
+        assert!(!results[0].found);
+    }
+
+    #[test]
+    fn test_run_checks_attribute() {
+        let html = r#"<img src="logo.png" alt="Logo"><a href="/">Home</a>"#;
+        let check = SelectorCheck {
+            id: "a1".into(),
+            selector: "img".into(),
+            label: "Img alt".into(),
+            check_type: CheckType::Attribute,
+            expected_status: None,
+            pattern: None,
+            attribute_name: Some("alt".into()),
+            attribute_value: Some("Logo".into()),
+        };
+        let results = run_checks(200, html, "https://example.com", &[check]);
+        assert!(results[0].found);
+        assert_eq!(results[0].count, 1);
     }
 }
 
