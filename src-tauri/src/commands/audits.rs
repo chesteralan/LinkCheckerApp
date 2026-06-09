@@ -25,8 +25,8 @@ pub fn list_audits(state: State<'_, AppState>) -> Result<Vec<Audit>, String> {
     Ok(data.audits.clone())
 }
 
-#[tauri::command(rename_all = "camelCase")]
 #[allow(clippy::too_many_arguments)]
+#[tauri::command(rename_all = "camelCase")]
 pub fn create_audit(
     state: State<'_, AppState>,
     name: String,
@@ -66,8 +66,8 @@ pub fn create_audit(
     Ok(audit)
 }
 
-#[tauri::command(rename_all = "camelCase")]
 #[allow(clippy::too_many_arguments)]
+#[tauri::command(rename_all = "camelCase")]
 pub fn update_audit(
     state: State<'_, AppState>,
     id: String,
