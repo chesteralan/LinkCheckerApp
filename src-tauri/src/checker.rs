@@ -194,7 +194,7 @@ async fn check_url(
 
             match response.text().await {
                 Ok(html) => {
-                    let check_results = run_checks(status_code, &html, &checks);
+                    let check_results = run_checks(status_code, &html, &url, &checks);
                     PageResult {
                         page_title: extract_title(&html),
                         url,
@@ -231,7 +231,7 @@ async fn check_url(
     }
 }
 
-fn run_checks(status_code: u16, html: &str, checks: &[SelectorCheck]) -> Vec<SelectorResult> {
+fn run_checks(status_code: u16, html: &str, page_url: &str, checks: &[SelectorCheck]) -> Vec<SelectorResult> {
     checks
         .iter()
         .map(|check| {
@@ -242,6 +242,7 @@ fn run_checks(status_code: u16, html: &str, checks: &[SelectorCheck]) -> Vec<Sel
                 CheckType::Attribute => run_attribute_check(check, html),
                 CheckType::Selector => run_selector_check(check, html),
                 CheckType::Accessibility => run_accessibility_check(check, html),
+                CheckType::JavaScript => run_js_check(check, html, page_url),
             }
         })
         .collect()
@@ -496,6 +497,74 @@ fn run_accessibility_check(check: &SelectorCheck, html: &str) -> SelectorResult 
     }
 }
 
+fn run_js_check(check: &SelectorCheck, html: &str, page_url: &str) -> SelectorResult {
+    use boa_engine::{Context, Source};
+    let js_code = match &check.pattern {
+        Some(p) if !p.is_empty() => p.clone(),
+        _ => {
+            return SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found: false,
+                count: 0,
+                text_content: Some("No JS snippet provided".into()),
+                check_type: CheckType::JavaScript,
+                a11y_issues: vec![],
+            }
+        }
+    };
+
+    let document = scraper::Html::parse_document(html);
+    let page_text = document.root_element().text().collect::<String>();
+
+    let mut context = Context::default();
+    if let Err(e) = context.eval(Source::from_bytes(&format!(
+        "const pageText = {}; const pageUrl = {}; const pageTitle = {};",
+        serde_json::to_string(&page_text).unwrap_or_default(),
+        serde_json::to_string(page_url).unwrap_or_default(),
+        serde_json::to_string(&extract_title(html)).unwrap_or_default(),
+    ))) {
+        return SelectorResult {
+            selector_check_id: check.id.clone(),
+            selector: check.selector.clone(),
+            label: check.label.clone(),
+            found: false,
+            count: 0,
+            text_content: Some(format!("Failed to set up context: {}", e)),
+            check_type: CheckType::JavaScript,
+            a11y_issues: vec![],
+        };
+    }
+
+    match context.eval(Source::from_bytes(&js_code)) {
+        Ok(val) => {
+            let pass = val.as_boolean().unwrap_or(false);
+            let display = val.to_string(&mut context).map(|s| s.to_std_string().unwrap_or_default()).unwrap_or_default();
+            SelectorResult {
+                selector_check_id: check.id.clone(),
+                selector: check.selector.clone(),
+                label: check.label.clone(),
+                found: pass,
+                count: if pass { 1 } else { 0 },
+                text_content: Some(display),
+                check_type: CheckType::JavaScript,
+                a11y_issues: vec![],
+            }
+        }
+        Err(e) => SelectorResult {
+            selector_check_id: check.id.clone(),
+            selector: check.selector.clone(),
+            label: check.label.clone(),
+            found: false,
+            count: 0,
+            text_content: Some(format!("JS error: {}", e)),
+            check_type: CheckType::JavaScript,
+            a11y_issues: vec![],
+        },
+    }
+}
+
 fn extract_title(html: &str) -> Option<String> {
     let document = scraper::Html::parse_document(html);
     let selector = scraper::Selector::parse("title").ok()?;
@@ -715,7 +784,7 @@ mod tests {
             make_check("c2", "p", "Paragraph"),
             make_check("c3", ".missing", "Missing"),
         ];
-        let results = run_checks(200, html, &checks);
+        let results = run_checks(200, html, "https://example.com", &checks);
         assert_eq!(results.len(), 3);
         assert!(results[0].found);
         assert_eq!(results[0].count, 1);
@@ -734,7 +803,7 @@ mod tests {
         let checks = vec![
             make_check("c1", "[[invalid", "Bad"),
         ];
-        let results = run_checks(200, html, &checks);
+        let results = run_checks(200, html, "https://example.com", &checks);
         assert_eq!(results.len(), 1);
         assert!(!results[0].found);
     }
@@ -751,7 +820,7 @@ mod tests {
             attribute_name: None,
             attribute_value: None,
         };
-        let results = run_checks(200, "", &[check]);
+        let results = run_checks(200, "", "https://example.com", &[check]);
         assert!(results[0].found);
         assert_eq!(results[0].text_content.as_deref(), Some("HTTP 200"));
     }
@@ -769,7 +838,7 @@ mod tests {
             attribute_name: None,
             attribute_value: None,
         };
-        let results = run_checks(200, html, &[check]);
+        let results = run_checks(200, html, "https://example.com", &[check]);
         assert!(results[0].found);
         assert_eq!(results[0].count, 2);
     }
@@ -786,7 +855,7 @@ mod tests {
             attribute_name: None,
             attribute_value: None,
         };
-        let results = run_checks(200, "", &[check]);
+        let results = run_checks(200, "", "https://example.com", &[check]);
         assert!(!results[0].found);
     }
 
@@ -803,7 +872,7 @@ mod tests {
             attribute_name: Some("alt".into()),
             attribute_value: Some("Logo".into()),
         };
-        let results = run_checks(200, html, &[check]);
+        let results = run_checks(200, html, "https://example.com", &[check]);
         assert!(results[0].found);
         assert_eq!(results[0].count, 1);
     }

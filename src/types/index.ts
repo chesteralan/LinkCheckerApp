@@ -8,7 +8,7 @@ export interface TargetList {
   folder?: string
 }
 
-export type CheckType = 'selector' | 'status' | 'regex' | 'attribute' | 'accessibility'
+export type CheckType = 'selector' | 'status' | 'regex' | 'attribute' | 'accessibility' | 'javascript'
 
 export interface SelectorCheck {
   id: string

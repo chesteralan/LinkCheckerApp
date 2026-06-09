@@ -23,6 +23,7 @@ pub enum CheckType {
     Regex,
     Attribute,
     Accessibility,
+    JavaScript,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
