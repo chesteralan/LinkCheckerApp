@@ -293,6 +293,20 @@ export function RunDetailPage() {
                         <span>{cr.label}</span>
                         <span className="opacity-50 text-[10px] uppercase">{cr.checkType}</span>
                         {cr.textContent && <span className="opacity-70">— {cr.textContent}</span>}
+                        {cr.checkType === 'accessibility' && cr.a11yIssues && cr.a11yIssues.length > 0 && (
+                          <details className="ml-2 inline-block align-middle relative">
+                            <summary className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground">
+                              {cr.a11yIssues.length} issue{cr.a11yIssues.length > 1 ? 's' : ''}
+                            </summary>
+                            <div className="absolute z-50 mt-1 w-80 bg-popover border border-border rounded-md shadow-lg p-2 text-[10px] space-y-1">
+                              {cr.a11yIssues.map((issue, i) => (
+                                <div key={i} className="flex items-start gap-1">
+                                  <span className="text-muted-foreground">{issue.message}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
                       </span>
                     ))}
                   </div>

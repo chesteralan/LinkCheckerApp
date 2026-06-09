@@ -8,7 +8,7 @@ export interface TargetList {
   folder?: string
 }
 
-export type CheckType = 'selector' | 'status' | 'regex' | 'attribute'
+export type CheckType = 'selector' | 'status' | 'regex' | 'attribute' | 'accessibility'
 
 export interface SelectorCheck {
   id: string
@@ -62,6 +62,13 @@ export interface Audit {
   baselineRunId?: string
 }
 
+export interface A11yIssue {
+  issueType: string
+  element: string
+  selector: string
+  message: string
+}
+
 export interface SelectorResult {
   selectorCheckId: string
   selector: string
@@ -70,6 +77,7 @@ export interface SelectorResult {
   count: number
   textContent: string | null
   checkType: CheckType
+  a11yIssues: A11yIssue[]
 }
 
 export interface PageResult {

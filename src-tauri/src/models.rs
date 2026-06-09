@@ -22,6 +22,7 @@ pub enum CheckType {
     Status,
     Regex,
     Attribute,
+    Accessibility,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +101,15 @@ pub struct Audit {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct A11yIssue {
+    pub issue_type: String,
+    pub element: String,
+    pub selector: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct SelectorResult {
     pub selector_check_id: String,
     pub selector: String,
@@ -109,6 +119,8 @@ pub struct SelectorResult {
     pub text_content: Option<String>,
     #[serde(default)]
     pub check_type: CheckType,
+    #[serde(default)]
+    pub a11y_issues: Vec<A11yIssue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
