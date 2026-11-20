@@ -289,6 +289,33 @@ pub struct LinkCheckResult {
     pub status_text: String,
     pub error: Option<String>,
     pub depth: u32,
+    #[serde(default)]
+    pub a11y_issues: Vec<A11yIssue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkCheckScan {
+    pub id: String,
+    pub url: String,
+    pub max_depth: u32,
+    pub same_origin_only: bool,
+    pub include_accessibility: bool,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub results: Vec<LinkCheckResult>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkCheckScanInfo {
+    pub id: String,
+    pub url: String,
+    pub started_at: String,
+    pub timestamp_ms: i64,
+    pub total_links: usize,
+    pub broken: usize,
+    pub a11y_issues: usize,
 }
 
 impl AppData {

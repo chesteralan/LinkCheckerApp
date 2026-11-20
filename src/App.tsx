@@ -13,6 +13,8 @@ import { RunDetailPage } from '@/pages/RunDetailPage'
 import { RunDiffPage } from '@/pages/RunDiffPage'
 import { QuickAuditPage } from '@/pages/QuickAuditPage'
 import { LinkCheckerPage } from '@/pages/LinkCheckerPage'
+import { LinkCheckHistoryPage } from '@/pages/LinkCheckHistoryPage'
+import { LinkCheckScanPage } from '@/pages/LinkCheckScanPage'
 import { AccessibilityPage } from '@/pages/AccessibilityPage'
 import { A11yReportPage } from '@/pages/A11yReportPage'
 import { useHotkeys } from '@/hooks/useHotkeys'
@@ -135,6 +137,8 @@ function App() {
               <Route path="/history/:runId" element={<RunDetailPage />} />
               <Route path="/history/diff/:runIdA/:runIdB" element={<RunDiffPage />} />
               <Route path="/link-checker" element={<LinkCheckerPage />} />
+              <Route path="/link-checker/history" element={<LinkCheckHistoryPage />} />
+              <Route path="/link-checker/history/:scanId" element={<LinkCheckScanPage />} />
               <Route path="/accessibility" element={<AccessibilityPage />} />
               <Route path="/accessibility/reports/:reportId" element={<A11yReportPage />} />
             </Routes>

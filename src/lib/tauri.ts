@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { TargetList, CheckTemplate, Audit, AuditRun, SelectorCheck, A11yAudit, A11yCheckConfig, A11yReport, A11yReportInfo, AuditConfig } from '@/types'
+import type { TargetList, CheckTemplate, Audit, AuditRun, SelectorCheck, A11yAudit, A11yCheckConfig, A11yReport, A11yReportInfo, AuditConfig, LinkCheckResult, LinkCheckScan, LinkCheckScanInfo } from '@/types'
 
 export function normalizeUrl(raw: string): string {
   let url = raw.trim()
@@ -91,12 +91,16 @@ export const setHistoryRetention = (days: number) => invoke<void>('set_history_r
 
 export const checkLinks = (
   url: string,
-  options: { maxDepth: number; timeoutSecs: number; sameOriginOnly: boolean },
+  options: { maxDepth: number; timeoutSecs: number; sameOriginOnly: boolean; includeAccessibility?: boolean },
 ) =>
-  invoke<{ url: string; sourceUrl: string; status: number | null; statusText: string; error: string | null; depth: number }[]>(
+  invoke<LinkCheckResult[]>(
     'check_links',
     { url, options },
   )
+
+export const listLinkCheckScans = () => invoke<LinkCheckScanInfo[]>('list_link_check_scans')
+export const getLinkCheckScan = (scanId: string) => invoke<LinkCheckScan>('get_link_check_scan', { scanId })
+export const deleteLinkCheckScan = (scanId: string) => invoke<void>('delete_link_check_scan', { scanId })
 
 // Accessibility Audits
 export const listA11yAudits = () => invoke<A11yAudit[]>('list_a11y_audits')

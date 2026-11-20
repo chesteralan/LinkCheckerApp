@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use crate::models::{AppData, A11yReport, A11yReportInfo, AuditRun, RunFileInfo};
+use crate::models::{AppData, A11yReport, A11yReportInfo, AuditRun, LinkCheckScan, LinkCheckScanInfo, RunFileInfo};
 
 #[cfg(test)]
 mod tests {
@@ -324,6 +324,112 @@ impl Storage {
                     }
                 }
             }
+        }
+        Ok(())
+    }
+
+    pub fn link_checks_dir(&self) -> PathBuf {
+        let d = self.dir.join("link-checks");
+        std::fs::create_dir_all(&d).ok();
+        d
+    }
+
+    fn link_check_filepath(&self, scan: &LinkCheckScan) -> PathBuf {
+        let ts = format_datetime_for_filename(&scan.started_at);
+        self.link_checks_dir().join(format!("linkcheck-{}-{}.json", ts, scan.id))
+    }
+
+    fn link_check_filepath_by_id(&self, scan_id: &str) -> Option<PathBuf> {
+        let hd = self.link_checks_dir();
+        if let Ok(entries) = std::fs::read_dir(&hd) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.ends_with(&format!("-{}.json", scan_id)) {
+                    return Some(entry.path());
+                }
+            }
+        }
+        None
+    }
+
+    pub fn save_link_check_scan(&self, scan: &LinkCheckScan) -> Result<(), String> {
+        std::fs::create_dir_all(self.link_checks_dir()).map_err(|e| e.to_string())?;
+        let path = self.link_check_filepath(scan);
+        let content = serde_json::to_string_pretty(scan).map_err(|e| e.to_string())?;
+        std::fs::write(&path, content).map_err(|e| e.to_string())
+    }
+
+    pub fn load_link_check_scan(&self, scan_id: &str) -> Result<LinkCheckScan, String> {
+        let path = self
+            .link_check_filepath_by_id(scan_id)
+            .ok_or_else(|| "Scan not found".to_string())?;
+        let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&content).map_err(|e| e.to_string())
+    }
+
+    pub fn list_link_check_scans(&self) -> Vec<LinkCheckScanInfo> {
+        let hd = self.link_checks_dir();
+        let mut infos: Vec<LinkCheckScanInfo> = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&hd) {
+            let mut entries: Vec<_> = entries
+                .flatten()
+                .filter(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    name.starts_with("linkcheck-") && name.ends_with(".json")
+                })
+                .collect();
+            entries.sort_by_key(|e| {
+                std::fs::metadata(e.path())
+                    .and_then(|m| m.created())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+            });
+            entries.reverse();
+            for entry in entries {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                let stripped = name.strip_prefix("linkcheck-").and_then(|s| s.strip_suffix(".json"));
+                if let Some(body) = stripped {
+                    if let Some(sep) = body.rfind('-') {
+                        let id = body[sep + 1..].to_string();
+                        let scan = std::fs::read_to_string(&path)
+                            .ok()
+                            .and_then(|c| serde_json::from_str::<LinkCheckScan>(&c).ok());
+                        let ms = std::fs::metadata(&path)
+                            .and_then(|m| m.created())
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::SystemTime::UNIX_EPOCH).ok())
+                            .map(|d| d.as_millis() as i64)
+                            .unwrap_or(0);
+                        let (url, started_at, total, broken, a11y) = scan
+                            .map(|s| {
+                                let broken = s
+                                    .results
+                                    .iter()
+                                    .filter(|r| r.status.map(|x| x >= 400).unwrap_or(false) || r.error.is_some())
+                                    .count();
+                                let a11y = s.results.iter().map(|r| r.a11y_issues.len()).sum();
+                                (s.url, s.started_at, s.results.len(), broken, a11y)
+                            })
+                            .unwrap_or_default();
+                        infos.push(LinkCheckScanInfo {
+                            id,
+                            url,
+                            started_at,
+                            timestamp_ms: ms,
+                            total_links: total,
+                            broken,
+                            a11y_issues: a11y,
+                        });
+                    }
+                }
+            }
+        }
+        infos
+    }
+
+    pub fn delete_link_check_scan(&self, scan_id: &str) -> Result<(), String> {
+        if let Some(path) = self.link_check_filepath_by_id(scan_id) {
+            std::fs::remove_file(&path).map_err(|e| e.to_string())?;
         }
         Ok(())
     }

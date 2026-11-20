@@ -167,3 +167,34 @@ export interface A11yReportInfo {
   startedAt: string
   timestampMs: number
 }
+
+export interface LinkCheckResult {
+  url: string
+  sourceUrl: string
+  status: number | null
+  statusText: string
+  error: string | null
+  depth: number
+  a11yIssues: A11yIssue[]
+}
+
+export interface LinkCheckScan {
+  id: string
+  url: string
+  maxDepth: number
+  sameOriginOnly: boolean
+  includeAccessibility: boolean
+  startedAt: string
+  completedAt: string | null
+  results: LinkCheckResult[]
+}
+
+export interface LinkCheckScanInfo {
+  id: string
+  url: string
+  startedAt: string
+  timestampMs: number
+  totalLinks: number
+  broken: number
+  a11yIssues: number
+}
