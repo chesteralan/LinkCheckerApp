@@ -368,6 +368,14 @@ fn default_max_depth() -> u32 { 1 }
 fn default_check_timeout() -> u64 { 10 }
 fn default_same_origin_only() -> bool { true }
 
+const MAX_LINK_CHECKS: usize = 500;
+
+fn origin_matches(seed: &Option<reqwest::Url>, url: &str) -> bool {
+    seed.as_ref().map_or(true, |o| {
+        reqwest::Url::parse(url).map(|u| u.origin() == o.origin()).unwrap_or(false)
+    })
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn check_links(url: String, options: CheckLinksOptions) -> Result<Vec<LinkCheckResult>, String> {
     let client = reqwest::Client::builder()
@@ -377,13 +385,14 @@ pub async fn check_links(url: String, options: CheckLinksOptions) -> Result<Vec<
         .map_err(|e| e.to_string())?;
 
     let parsed = reqwest::Url::parse(&url).map_err(|_| "Invalid URL".to_string())?;
-    let origin = if options.same_origin_only { Some(parsed.origin()) } else { None };
-    let max_depth = options.max_depth;
+    let origin = if options.same_origin_only { Some(parsed.clone()) } else { None };
+    let max_depth = options.max_depth.min(5);
     let semaphore = Arc::new(Semaphore::new(10));
     let results = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let visited = Arc::new(std::sync::Mutex::new(HashSet::new()));
+    let visited = Arc::new(std::sync::Mutex::new(HashSet::from([url.clone()])));
+    let checked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
-    // Phase 1: fetch the seed page
+    // Seed page
     let seed_result = fetch_and_check(&client, &url).await;
     results.lock().unwrap().push(seed_result);
 
@@ -391,77 +400,86 @@ pub async fn check_links(url: String, options: CheckLinksOptions) -> Result<Vec<
         return Ok(results.lock().unwrap().clone());
     }
 
-    // Phase 2: extract links from seed and check them
-    let links = extract_links(&client, &url).await.unwrap_or_default();
-    let mut handles = Vec::new();
+    // Level-order crawl: each level HEAD-checks its frontier and, for
+    // pages that respond OK and aren't at max depth, GETs them to
+    // discover the next frontier. Frontier entries are (url, source_url).
+    let mut frontier: Vec<(String, String)> = extract_links(&client, &url)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|l| origin_matches(&origin, l))
+        .filter(|l| visited.lock().unwrap().insert(l.clone()))
+        .map(|l| (l, url.clone()))
+        .collect();
+    frontier.sort();
 
-    for link in &links {
-        let should_recurse = origin.as_ref().map_or(true, |o| {
-            reqwest::Url::parse(link).map(|u| u.origin() == *o).unwrap_or(false)
-        });
-        if !should_recurse {
-            continue;
+    for depth in 1..=max_depth {
+        if frontier.is_empty() {
+            break;
         }
-        {
-            let mut v = visited.lock().unwrap();
-            if !v.insert(link.clone()) {
-                continue;
-            }
-        }
+        let next_frontier = Arc::new(std::sync::Mutex::new(Vec::<(String, String)>::new()));
+        let mut handles = Vec::new();
 
-        let client = client.clone();
-        let results = results.clone();
-        let sem = semaphore.clone();
-        let visited = visited.clone();
-        let origin = origin.clone();
-        let link = link.clone();
-        let source = url.clone();
-
-        let permit = sem.acquire_owned().await.map_err(|e| e.to_string())?;
-        handles.push(tokio::spawn(async move {
-            let _permit = permit;
-            let result = check_single_link(&client, &link).await;
-            results.lock().unwrap().push(LinkCheckResult {
-                url: link.clone(),
-                source_url: source,
-                status: result.status,
-                status_text: result.status_text,
-                error: result.error,
-                depth: 1,
-            });
-
-            if max_depth <= 1 || result.status.map(|s| s >= 400).unwrap_or(true) {
-                return;
+        for (link, source) in frontier.drain(..) {
+            if checked.load(std::sync::atomic::Ordering::SeqCst) >= MAX_LINK_CHECKS {
+                break;
             }
 
-            let sub_links = match extract_links(&client, &link).await {
-                Ok(l) => l,
-                Err(_) => return,
-            };
-            for sub in sub_links {
-                let sub_match = origin.as_ref().map_or(true, |o| {
-                    reqwest::Url::parse(&sub).map(|u| u.origin() == *o).unwrap_or(false)
-                });
-                if !sub_match { continue; }
-                {
-                    let mut v = visited.lock().unwrap();
-                    if !v.insert(sub.clone()) { continue; }
-                }
-                let sub_result = check_single_link(&client, &sub).await;
+            let client = client.clone();
+            let results = results.clone();
+            let sem = semaphore.clone();
+            let visited = visited.clone();
+            let origin = origin.clone();
+            let next_frontier = next_frontier.clone();
+            let checked = checked.clone();
+            let link = link.clone();
+            let can_expand = depth < max_depth;
+
+            let permit = sem.acquire_owned().await.map_err(|e| e.to_string())?;
+            checked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            handles.push(tokio::spawn(async move {
+                let _permit = permit;
+                let result = check_single_link(&client, &link).await;
+                let ok = result.status.map(|s| s < 400).unwrap_or(false);
                 results.lock().unwrap().push(LinkCheckResult {
-                    url: sub,
-                    source_url: link.clone(),
-                    status: sub_result.status,
-                    status_text: sub_result.status_text,
-                    error: sub_result.error,
-                    depth: 2,
+                    url: link.clone(),
+                    source_url: source,
+                    status: result.status,
+                    status_text: result.status_text,
+                    error: result.error,
+                    depth,
                 });
-            }
-        }));
-    }
 
-    for h in handles {
-        let _ = h.await;
+                if !can_expand || !ok {
+                    return;
+                }
+                let sub_links = match extract_links(&client, &link).await {
+                    Ok(l) => l,
+                    Err(_) => return,
+                };
+                let mut next = next_frontier.lock().unwrap();
+                for sub in sub_links {
+                    if checked.load(std::sync::atomic::Ordering::SeqCst) >= MAX_LINK_CHECKS {
+                        break;
+                    }
+                    if !origin_matches(&origin, &sub) {
+                        continue;
+                    }
+                    if visited.lock().unwrap().insert(sub.clone()) {
+                        next.push((sub, link.clone()));
+                    }
+                }
+            }));
+        }
+
+        for h in handles {
+            let _ = h.await;
+        }
+
+        let mut next = next_frontier.lock().unwrap().clone();
+        next.sort();
+        next.dedup();
+        frontier = next;
     }
 
     let final_results = results.lock().unwrap().clone();
