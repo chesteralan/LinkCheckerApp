@@ -1,3 +1,6 @@
+mod a11y;
+mod a11y_browser;
+mod a11y_runner;
 mod checker;
 mod commands;
 mod models;
@@ -6,6 +9,7 @@ mod storage;
 use std::sync::Mutex;
 use tauri::Manager;
 
+use a11y_runner::A11yRunner;
 use checker::Checker;
 use models::AppData;
 use storage::Storage;
@@ -14,6 +18,7 @@ pub struct AppState {
     pub data: Mutex<AppData>,
     pub storage: Storage,
     pub checker: Checker,
+    pub a11y_runner: A11yRunner,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -46,6 +51,7 @@ pub fn run() {
                 data: Mutex::new(data),
                 storage,
                 checker: Checker::new(),
+                a11y_runner: A11yRunner::new(),
             });
 
             Ok(())
@@ -80,6 +86,15 @@ pub fn run() {
             commands::runs::prune_history,
             commands::runs::set_history_retention,
             commands::runs::check_links,
+            commands::a11y::list_a11y_audits,
+            commands::a11y::create_a11y_audit,
+            commands::a11y::update_a11y_audit,
+            commands::a11y::delete_a11y_audit,
+            commands::a11y::run_a11y_audit,
+            commands::a11y::cancel_a11y_run,
+            commands::a11y::list_a11y_reports,
+            commands::a11y::get_a11y_report,
+            commands::a11y::delete_a11y_report,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

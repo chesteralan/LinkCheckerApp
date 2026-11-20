@@ -403,82 +403,11 @@ fn run_attribute_check(check: &SelectorCheck, html: &str) -> SelectorResult {
 }
 
 fn run_accessibility_check(check: &SelectorCheck, html: &str) -> SelectorResult {
-    let document = scraper::Html::parse_document(html);
-    let mut issues = Vec::new();
-
-    // 1. Images without alt text
-    if let Ok(img_sel) = scraper::Selector::parse("img:not([alt]), img[alt='']") {
-        for el in document.select(&img_sel) {
-            let tag = el.value().name().to_string();
-            let id_attr = el.value().attr("id").map(|s| format!("#{}", s)).unwrap_or_default();
-            issues.push(crate::models::A11yIssue {
-                issue_type: "missing-alt".into(),
-                element: tag.clone(),
-                selector: format!("{}{}", tag, id_attr),
-                message: "Image is missing alt text".to_string(),
-            });
-        }
-    }
-
-    // 2. Empty links
-    if let Ok(empty_a_sel) = scraper::Selector::parse("a:not([href]), a[href='']") {
-        for el in document.select(&empty_a_sel) {
-            let id_attr = el.value().attr("id").map(|s| format!("#{}", s)).unwrap_or_default();
-            issues.push(crate::models::A11yIssue {
-                issue_type: "empty-link".into(),
-                element: "a".into(),
-                selector: format!("a{}", id_attr),
-                message: "Link has no href or empty href".into(),
-            });
-        }
-    }
-
-    // 3. Buttons without accessible name
-    if let Ok(btn_sel) = scraper::Selector::parse("button:not([aria-label]):not([aria-labelledby])") {
-        for el in document.select(&btn_sel) {
-            let text = el.text().collect::<String>().trim().to_string();
-            let id_attr = el.value().attr("id").map(|s| format!("#{}", s)).unwrap_or_default();
-            if text.is_empty() {
-                issues.push(crate::models::A11yIssue {
-                    issue_type: "missing-label".into(),
-                    element: "button".into(),
-                    selector: format!("button{}", id_attr),
-                    message: "Button has no accessible name (no aria-label, aria-labelledby, or text content)".into(),
-                });
-            }
-        }
-    }
-
-    // 4. Missing form labels
-    if let Ok(input_sel) = scraper::Selector::parse("input:not([type=hidden]):not([aria-label]):not([aria-labelledby])") {
-        for el in document.select(&input_sel) {
-            let id_attr = el.value().attr("id").map(|s| s.to_string());
-            let input_type = el.value().attr("type").unwrap_or("text");
-            if let Some(ref id) = id_attr {
-                let label_sel = format!("label[for='{}']", id);
-                let has_label = scraper::Selector::parse(&label_sel)
-                    .ok()
-                    .map(|lbl_sel| document.select(&lbl_sel).next().is_some())
-                    .unwrap_or(false);
-                if !has_label {
-                    issues.push(crate::models::A11yIssue {
-                        issue_type: "missing-label".into(),
-                        element: format!("input[type={}]", input_type),
-                        selector: format!("#{}", id),
-                        message: format!("Input #{} has no associated label", id),
-                    });
-                }
-            } else {
-                issues.push(crate::models::A11yIssue {
-                    issue_type: "missing-label".into(),
-                    element: format!("input[type={}]", input_type),
-                    selector: "input".into(),
-                    message: "Input has no id and no aria-label".into(),
-                });
-            }
-        }
-    }
-
+    let config = check
+        .a11y_config
+        .clone()
+        .unwrap_or_else(crate::models::A11yCheckConfig::default);
+    let issues = crate::a11y::run_a11y_scan(html, &config);
     let found_count = issues.len();
 
     SelectorResult {
@@ -773,6 +702,7 @@ mod tests {
             pattern: None,
             attribute_name: None,
             attribute_value: None,
+            a11y_config: None,
         }
     }
 
@@ -819,6 +749,7 @@ mod tests {
             pattern: None,
             attribute_name: None,
             attribute_value: None,
+            a11y_config: None,
         };
         let results = run_checks(200, "", "https://example.com", &[check]);
         assert!(results[0].found);
@@ -837,6 +768,7 @@ mod tests {
             pattern: Some("hello".into()),
             attribute_name: None,
             attribute_value: None,
+            a11y_config: None,
         };
         let results = run_checks(200, html, "https://example.com", &[check]);
         assert!(results[0].found);
@@ -854,6 +786,7 @@ mod tests {
             pattern: Some("[invalid".into()),
             attribute_name: None,
             attribute_value: None,
+            a11y_config: None,
         };
         let results = run_checks(200, "", "https://example.com", &[check]);
         assert!(!results[0].found);
@@ -871,6 +804,7 @@ mod tests {
             pattern: None,
             attribute_name: Some("alt".into()),
             attribute_value: Some("Logo".into()),
+            a11y_config: None,
         };
         let results = run_checks(200, html, "https://example.com", &[check]);
         assert!(results[0].found);

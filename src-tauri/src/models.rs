@@ -38,6 +38,30 @@ pub struct SelectorCheck {
     pub pattern: Option<String>,
     pub attribute_name: Option<String>,
     pub attribute_value: Option<String>,
+    #[serde(default)]
+    pub a11y_config: Option<A11yCheckConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct A11yCheckConfig {
+    #[serde(default = "default_a11y_min_severity")]
+    pub min_severity: String,
+    #[serde(default)]
+    pub categories: Vec<String>,
+}
+
+impl Default for A11yCheckConfig {
+    fn default() -> Self {
+        Self {
+            min_severity: default_a11y_min_severity(),
+            categories: Vec::new(),
+        }
+    }
+}
+
+fn default_a11y_min_severity() -> String {
+    "minor".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,6 +131,12 @@ pub struct A11yIssue {
     pub element: String,
     pub selector: String,
     pub message: String,
+    #[serde(default)]
+    pub severity: String,
+    #[serde(default)]
+    pub wcag: String,
+    #[serde(default)]
+    pub help_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -148,6 +178,68 @@ pub struct RunSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct A11yAudit {
+    pub id: String,
+    pub name: String,
+    pub target_list_id: String,
+    pub engine: String,
+    pub a11y_config: A11yCheckConfig,
+    pub config: AuditConfig,
+    pub origin_override: Option<String>,
+    pub url_postfix: Option<String>,
+    pub created_at: String,
+    #[serde(default)]
+    pub pinned: bool,
+    pub folder: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct A11yPageResult {
+    pub url: String,
+    pub page_title: Option<String>,
+    pub status: Option<u16>,
+    pub status_text: String,
+    pub response_time_ms: Option<u64>,
+    pub error: Option<String>,
+    pub issues: Vec<A11yIssue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct A11ySummary {
+    pub total_pages: usize,
+    pub pages_with_issues: usize,
+    pub errored: usize,
+    pub critical: usize,
+    pub serious: usize,
+    pub moderate: usize,
+    pub minor: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct A11yReport {
+    pub id: String,
+    pub audit_id: String,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub status: String,
+    pub results: Vec<A11yPageResult>,
+    pub summary: A11ySummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct A11yReportInfo {
+    pub id: String,
+    pub audit_id: String,
+    pub started_at: String,
+    pub timestamp_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditRun {
     pub id: String,
     pub audit_id: String,
@@ -163,6 +255,8 @@ pub struct AppData {
     pub target_lists: Vec<TargetList>,
     pub check_templates: Vec<CheckTemplate>,
     pub audits: Vec<Audit>,
+    #[serde(default)]
+    pub a11y_audits: Vec<A11yAudit>,
     #[serde(default = "default_max_history_days")]
     pub max_history_days: u32,
 }
@@ -203,6 +297,7 @@ impl AppData {
             target_lists: Vec::new(),
             check_templates: Vec::new(),
             audits: Vec::new(),
+            a11y_audits: Vec::new(),
             max_history_days: default_max_history_days(),
         }
     }

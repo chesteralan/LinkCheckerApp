@@ -6,7 +6,8 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { save } from '@tauri-apps/plugin-dialog'
 import { VirtualList } from '@/components/VirtualList'
 import { Modal } from '@/components/Modal'
-import type { AuditRun, SelectorCheck, PageResult } from '@/types'
+import { A11yIssuesList } from '@/components/A11yIssuesList'
+import type { AuditRun, SelectorCheck, PageResult, A11yIssue } from '@/types'
 
 const ITEM_HEIGHT_DETAILED = 100
 const ITEM_HEIGHT_TABLE = 42
@@ -22,6 +23,8 @@ export function RunDetailPage() {
   const [showSaveTemplate, setShowSaveTemplate] = useState(false)
   const [templateName, setTemplateName] = useState('')
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [expandedA11y, setExpandedA11y] = useState<string | null>(null)
+  const [a11yModal, setA11yModal] = useState<{ title: string; issues: A11yIssue[] } | null>(null)
   const exportRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -294,23 +297,30 @@ export function RunDetailPage() {
                         <span className="opacity-50 text-[10px] uppercase">{cr.checkType}</span>
                         {cr.textContent && <span className="opacity-70">— {cr.textContent}</span>}
                         {cr.checkType === 'accessibility' && cr.a11yIssues && cr.a11yIssues.length > 0 && (
-                          <details className="ml-2 inline-block align-middle relative">
-                            <summary className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground">
-                              {cr.a11yIssues.length} issue{cr.a11yIssues.length > 1 ? 's' : ''}
-                            </summary>
-                            <div className="absolute z-50 mt-1 w-80 bg-popover border border-border rounded-md shadow-lg p-2 text-[10px] space-y-1">
-                              {cr.a11yIssues.map((issue, i) => (
-                                <div key={i} className="flex items-start gap-1">
-                                  <span className="text-muted-foreground">{issue.message}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </details>
+                          <button
+                            onClick={() => {
+                              const key = `${result.url}::${cr.selectorCheckId}`
+                              setExpandedA11y(expandedA11y === key ? null : key)
+                            }}
+                            className="ml-1 text-[10px] text-primary hover:underline"
+                          >
+                            {cr.a11yIssues.length} issue{cr.a11yIssues.length > 1 ? 's' : ''}
+                          </button>
                         )}
                       </span>
                     ))}
                   </div>
                 )}
+                {expandedA11y?.startsWith(`${result.url}::`) && (() => {
+                  const checkId = expandedA11y.split('::')[1]
+                  const cr = result.checks.find((c) => c.selectorCheckId === checkId)
+                  return cr?.a11yIssues && cr.a11yIssues.length > 0 ? (
+                    <div className="pt-1">
+                      <p className="text-[10px] text-muted-foreground mb-1">{cr.label}</p>
+                      <A11yIssuesList issues={cr.a11yIssues} maxHeight="260px" />
+                    </div>
+                  ) : null
+                })()}
               </div>
             )}
           />
@@ -374,6 +384,14 @@ export function RunDetailPage() {
                                   ''
                                 )}
                               </span>
+                            ) : cr.checkType === 'accessibility' && cr.a11yIssues && cr.a11yIssues.length > 0 ? (
+                              <button
+                                onClick={() => setA11yModal({ title: `${result.url} — ${cr.label}`, issues: cr.a11yIssues })}
+                                className="text-destructive hover:underline"
+                                title="View accessibility issues"
+                              >
+                                ✗ {cr.a11yIssues.length} issue{cr.a11yIssues.length > 1 ? 's' : ''}
+                              </button>
                             ) : (
                               <span className="text-destructive">
                                 ✗
@@ -401,6 +419,14 @@ export function RunDetailPage() {
           </table>
         </div>
       )}
+
+      <Modal
+        open={a11yModal !== null}
+        onClose={() => setA11yModal(null)}
+        title={a11yModal?.title ?? 'Accessibility Issues'}
+      >
+        {a11yModal && <A11yIssuesList issues={a11yModal.issues} maxHeight="400px" />}
+      </Modal>
 
       <Modal open={showSaveTemplate} onClose={() => setShowSaveTemplate(false)} title="Save as Check Template">
         <div className="space-y-4">

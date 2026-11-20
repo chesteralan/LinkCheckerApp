@@ -13,6 +13,8 @@ import { RunDetailPage } from '@/pages/RunDetailPage'
 import { RunDiffPage } from '@/pages/RunDiffPage'
 import { QuickAuditPage } from '@/pages/QuickAuditPage'
 import { LinkCheckerPage } from '@/pages/LinkCheckerPage'
+import { AccessibilityPage } from '@/pages/AccessibilityPage'
+import { A11yReportPage } from '@/pages/A11yReportPage'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useRun } from '@/hooks/useRun'
 import { useTheme } from '@/hooks/ThemeContext'
@@ -27,6 +29,7 @@ const SHORTCUTS = [
   { key: '3', action: 'Navigate to Audits' },
   { key: '4', action: 'Navigate to Run History' },
   { key: '5', action: 'Navigate to Link Checker' },
+  { key: '6', action: 'Navigate to Accessibility' },
   { key: 'Escape', action: 'Close modal / Cancel' },
   { key: 'Cmd+Enter', action: 'Submit form' },
   { key: '?', action: 'Toggle this shortcut reference' },
@@ -132,6 +135,8 @@ function App() {
               <Route path="/history/:runId" element={<RunDetailPage />} />
               <Route path="/history/diff/:runIdA/:runIdB" element={<RunDiffPage />} />
               <Route path="/link-checker" element={<LinkCheckerPage />} />
+              <Route path="/accessibility" element={<AccessibilityPage />} />
+              <Route path="/accessibility/reports/:reportId" element={<A11yReportPage />} />
             </Routes>
           </ErrorBoundary>
         </main>
