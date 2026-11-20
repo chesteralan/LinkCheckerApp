@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { Modal } from '@/components/Modal'
 import { scrapeSelectors } from '@/lib/tauri'
-import type { SelectorCheck, CheckType } from '@/types'
+import type { SelectorCheck, CheckType, A11yCheckConfig } from '@/types'
 import { defaultCheck } from '@/types'
 
 const CHECK_TYPE_OPTIONS: { value: CheckType; label: string }[] = [
@@ -11,6 +11,35 @@ const CHECK_TYPE_OPTIONS: { value: CheckType; label: string }[] = [
   { value: 'status', label: 'HTTP Status' },
   { value: 'regex', label: 'Regex Match' },
   { value: 'attribute', label: 'Attribute Check' },
+  { value: 'accessibility', label: 'Accessibility (WCAG)' },
+  { value: 'javascript', label: 'JavaScript' },
+]
+
+const A11Y_CATEGORIES: { value: string; label: string }[] = [
+  { value: 'document', label: 'Document' },
+  { value: 'headings', label: 'Headings' },
+  { value: 'landmarks', label: 'Landmarks' },
+  { value: 'aria', label: 'ARIA' },
+  { value: 'interactive', label: 'Interactive' },
+  { value: 'media', label: 'Media' },
+  { value: 'tables', label: 'Tables' },
+  { value: 'forms', label: 'Forms' },
+]
+
+const A11Y_STANDARDS: { value: string; label: string }[] = [
+  { value: 'wcag20', label: 'WCAG 2.0' },
+  { value: 'wcag21', label: 'WCAG 2.1' },
+  { value: 'wcag22', label: 'WCAG 2.2' },
+  { value: 'section508', label: 'Section 508' },
+  { value: 'en301549', label: 'EN 301 549' },
+  { value: 'bestpractice', label: 'Best practices' },
+]
+
+const A11Y_SEVERITIES: { value: A11yCheckConfig['minSeverity']; label: string }[] = [
+  { value: 'minor', label: 'All issues' },
+  { value: 'moderate', label: 'Moderate and above' },
+  { value: 'serious', label: 'Serious and above' },
+  { value: 'critical', label: 'Critical only' },
 ]
 
 export function CheckTemplateDetailPage() {
@@ -71,6 +100,13 @@ export function CheckTemplateDetailPage() {
   function updateCheck(index: number, field: string, value: string | number | undefined) {
     const updated = [...checks]
     updated[index] = { ...updated[index], [field]: value }
+    persist(updated)
+  }
+
+  function updateA11yConfig(index: number, patch: Partial<A11yCheckConfig>) {
+    const updated = [...checks]
+    const current = updated[index].a11yConfig ?? { minSeverity: 'minor' as const, categories: [] }
+    updated[index] = { ...updated[index], a11yConfig: { ...current, ...patch } }
     persist(updated)
   }
 
@@ -148,7 +184,13 @@ export function CheckTemplateDetailPage() {
                 onChange={(e) => {
                   const ct = e.target.value as CheckType
                   const updated = [...checks]
-                  updated[index] = { ...defaultCheck(), id: check.id, label: check.label, checkType: ct }
+                  updated[index] = {
+                    ...defaultCheck(),
+                    id: check.id,
+                    label: check.label,
+                    checkType: ct,
+                    a11yConfig: ct === 'accessibility' ? { minSeverity: 'minor', categories: [] } : undefined,
+                  }
                   persist(updated)
                 }}
                 className="text-xs border border-border rounded px-2 py-1 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
@@ -264,6 +306,93 @@ export function CheckTemplateDetailPage() {
                       className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
+                </div>
+              )}
+
+              {check.checkType === 'accessibility' && (
+                <div className="space-y-3 border border-border/60 rounded-md p-3 bg-muted/20">
+                  <p className="text-xs text-muted-foreground">
+                    Scans each page for WCAG issues. The check passes when no issues are found at or above the selected severity.
+                  </p>
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">Minimum severity</label>
+                    <select
+                      value={check.a11yConfig?.minSeverity ?? 'minor'}
+                      onChange={(e) => updateA11yConfig(index, { minSeverity: e.target.value as A11yCheckConfig['minSeverity'] })}
+                      className="text-xs border border-border rounded px-2 py-1 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      {A11Y_SEVERITIES.map((s) => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">Rule categories (none selected = all)</label>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                      {A11Y_CATEGORIES.map((cat) => {
+                        const cats = check.a11yConfig?.categories ?? []
+                        const active = cats.length === 0 || cats.includes(cat.value)
+                        return (
+                          <label key={cat.value} className="flex items-center gap-1.5 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={active}
+                              onChange={(e) => {
+                                const all = A11Y_CATEGORIES.map((c) => c.value)
+                                const base = cats.length === 0 ? all : cats
+                                const selected = e.target.checked
+                                  ? [...new Set([...base, cat.value])]
+                                  : base.filter((c) => c !== cat.value)
+                                updateA11yConfig(index, { categories: selected })
+                              }}
+                            />
+                            {cat.label}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">
+                      Standards (none selected = all)
+                    </label>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                      {A11Y_STANDARDS.map((std) => {
+                        const stds = check.a11yConfig?.standards ?? []
+                        return (
+                          <label key={std.value} className="flex items-center gap-1.5 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={stds.includes(std.value)}
+                              onChange={(e) => {
+                                const selected = e.target.checked
+                                  ? [...stds, std.value]
+                                  : stds.filter((s) => s !== std.value)
+                                updateA11yConfig(index, { standards: selected })
+                              }}
+                            />
+                            {std.label}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {check.checkType === 'javascript' && (
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">JS Snippet (must evaluate to true/false)</label>
+                  <textarea
+                    value={check.pattern ?? ''}
+                    onChange={(e) => updateCheck(index, 'pattern', e.target.value)}
+                    placeholder={'pageText.includes("Welcome");'}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Available globals: <code>pageText</code>, <code>pageUrl</code>, <code>pageTitle</code>
+                  </p>
                 </div>
               )}
             </div>

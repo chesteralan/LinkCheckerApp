@@ -1,8 +1,8 @@
-use std::collections::{HashMap, BTreeSet, HashSet};
+use serde::Deserialize;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::sync::Arc;
-use serde::Deserialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Semaphore;
 
 use crate::models::*;
@@ -28,13 +28,18 @@ pub async fn scrape_links(url: String) -> Result<Vec<String>, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let html = client.get(&url).send().await
+    let html = client
+        .get(&url)
+        .send()
+        .await
         .map_err(|e| format!("Failed to fetch URL: {}", e))?
-        .text().await
+        .text()
+        .await
         .map_err(|e| format!("Failed to read response: {}", e))?;
 
     let document = scraper::Html::parse_document(&html);
-    let selector = scraper::Selector::parse("a[href]").map_err(|_| "Invalid selector".to_string())?;
+    let selector =
+        scraper::Selector::parse("a[href]").map_err(|_| "Invalid selector".to_string())?;
 
     let mut links: Vec<String> = document
         .select(&selector)
@@ -59,7 +64,10 @@ pub struct ScrapeSelectorsOptions {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn scrape_selectors(urls: Vec<String>, options: ScrapeSelectorsOptions) -> Result<Vec<ScrapedSelector>, String> {
+pub async fn scrape_selectors(
+    urls: Vec<String>,
+    options: ScrapeSelectorsOptions,
+) -> Result<Vec<ScrapedSelector>, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::limited(5))
@@ -72,7 +80,11 @@ pub async fn scrape_selectors(urls: Vec<String>, options: ScrapeSelectorsOptions
     for url in urls {
         let client = client.clone();
         let options = options.clone();
-        let permit = semaphore.clone().acquire_owned().await.map_err(|e| e.to_string())?;
+        let permit = semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|e| e.to_string())?;
 
         handles.push(tokio::spawn(async move {
             let _permit = permit;
@@ -89,19 +101,38 @@ pub async fn scrape_selectors(urls: Vec<String>, options: ScrapeSelectorsOptions
         }
     }
 
-    Ok(all_results.into_iter().map(|selector| {
-        let type_name = if selector.starts_with('#') { "id".into() }
-            else if selector.starts_with('.') { "class".into() }
-            else if selector.contains("data-testid") { "data-testid".into() }
-            else { "custom".into() };
-        ScrapedSelector { selector, type_name }
-    }).collect())
+    Ok(all_results
+        .into_iter()
+        .map(|selector| {
+            let type_name = if selector.starts_with('#') {
+                "id".into()
+            } else if selector.starts_with('.') {
+                "class".into()
+            } else if selector.contains("data-testid") {
+                "data-testid".into()
+            } else {
+                "custom".into()
+            };
+            ScrapedSelector {
+                selector,
+                type_name,
+            }
+        })
+        .collect())
 }
 
-async fn scrape_single(client: reqwest::Client, url: String, options: ScrapeSelectorsOptions) -> Result<Vec<ScrapedSelector>, String> {
-    let html = client.get(&url).send().await
+async fn scrape_single(
+    client: reqwest::Client,
+    url: String,
+    options: ScrapeSelectorsOptions,
+) -> Result<Vec<ScrapedSelector>, String> {
+    let html = client
+        .get(&url)
+        .send()
+        .await
         .map_err(|e| format!("Failed to fetch {}: {}", url, e))?
-        .text().await
+        .text()
+        .await
         .map_err(|e| format!("Failed to read {}: {}", url, e))?;
 
     let document = scraper::Html::parse_document(&html);
@@ -150,13 +181,21 @@ async fn scrape_single(client: reqwest::Client, url: String, options: ScrapeSele
         }
     }
 
-    Ok(results.into_iter().map(|s| ScrapedSelector {
-        selector: s.clone(),
-        type_name: if s.starts_with('#') { "id".into() }
-            else if s.starts_with('.') { "class".into() }
-            else if s.contains("data-testid") { "data-testid".into() }
-            else { "custom".into() },
-    }).collect())
+    Ok(results
+        .into_iter()
+        .map(|s| ScrapedSelector {
+            selector: s.clone(),
+            type_name: if s.starts_with('#') {
+                "id".into()
+            } else if s.starts_with('.') {
+                "class".into()
+            } else if s.contains("data-testid") {
+                "data-testid".into()
+            } else {
+                "custom".into()
+            },
+        })
+        .collect())
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -209,7 +248,10 @@ pub async fn quick_run(
         folder: None,
     };
 
-    let run = state.checker.run(&app, &audit, &target_list, &check_template).await;
+    let run = state
+        .checker
+        .run(&app, &audit, &target_list, &check_template)
+        .await;
 
     state.storage.save_run(&run)?;
 
@@ -262,7 +304,10 @@ pub async fn run_audit(
         }
     }
 
-    let run = state.checker.run(&app, &audit, &target_list, &check_template).await;
+    let run = state
+        .checker
+        .run(&app, &audit, &target_list, &check_template)
+        .await;
 
     state.storage.save_run(&run)?;
 
@@ -296,7 +341,10 @@ pub fn list_all_runs(state: State<'_, AppState>) -> Result<Vec<AuditRun>, String
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn list_audit_runs(state: State<'_, AppState>, audit_id: String) -> Result<Vec<AuditRun>, String> {
+pub fn list_audit_runs(
+    state: State<'_, AppState>,
+    audit_id: String,
+) -> Result<Vec<AuditRun>, String> {
     let runs = state.storage.load_recent_runs(500);
     let mut result: Vec<AuditRun> = runs
         .into_iter()
@@ -362,171 +410,90 @@ pub struct CheckLinksOptions {
     pub timeout_secs: u64,
     #[serde(default = "default_same_origin_only")]
     pub same_origin_only: bool,
+    #[serde(default)]
+    pub include_accessibility: bool,
 }
 
-fn default_max_depth() -> u32 { 1 }
-fn default_check_timeout() -> u64 { 10 }
-fn default_same_origin_only() -> bool { true }
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn check_links(url: String, options: CheckLinksOptions) -> Result<Vec<LinkCheckResult>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(options.timeout_secs))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let parsed = reqwest::Url::parse(&url).map_err(|_| "Invalid URL".to_string())?;
-    let origin = if options.same_origin_only { Some(parsed.origin()) } else { None };
-    let max_depth = options.max_depth;
-    let semaphore = Arc::new(Semaphore::new(10));
-    let results = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let visited = Arc::new(std::sync::Mutex::new(HashSet::new()));
-
-    // Phase 1: fetch the seed page
-    let seed_result = fetch_and_check(&client, &url).await;
-    results.lock().unwrap().push(seed_result);
-
-    if max_depth == 0 {
-        return Ok(results.lock().unwrap().clone());
-    }
-
-    // Phase 2: extract links from seed and check them
-    let links = extract_links(&client, &url).await.unwrap_or_default();
-    let mut handles = Vec::new();
-
-    for link in &links {
-        let should_recurse = origin.as_ref().map_or(true, |o| {
-            reqwest::Url::parse(link).map(|u| u.origin() == *o).unwrap_or(false)
-        });
-        if !should_recurse {
-            continue;
-        }
-        {
-            let mut v = visited.lock().unwrap();
-            if !v.insert(link.clone()) {
-                continue;
-            }
-        }
-
-        let client = client.clone();
-        let results = results.clone();
-        let sem = semaphore.clone();
-        let visited = visited.clone();
-        let origin = origin.clone();
-        let link = link.clone();
-        let source = url.clone();
-
-        let permit = sem.acquire_owned().await.map_err(|e| e.to_string())?;
-        handles.push(tokio::spawn(async move {
-            let _permit = permit;
-            let result = check_single_link(&client, &link).await;
-            results.lock().unwrap().push(LinkCheckResult {
-                url: link.clone(),
-                source_url: source,
-                status: result.status,
-                status_text: result.status_text,
-                error: result.error,
-                depth: 1,
-            });
-
-            if max_depth <= 1 || result.status.map(|s| s >= 400).unwrap_or(true) {
-                return;
-            }
-
-            let sub_links = match extract_links(&client, &link).await {
-                Ok(l) => l,
-                Err(_) => return,
-            };
-            for sub in sub_links {
-                let sub_match = origin.as_ref().map_or(true, |o| {
-                    reqwest::Url::parse(&sub).map(|u| u.origin() == *o).unwrap_or(false)
-                });
-                if !sub_match { continue; }
-                {
-                    let mut v = visited.lock().unwrap();
-                    if !v.insert(sub.clone()) { continue; }
-                }
-                let sub_result = check_single_link(&client, &sub).await;
-                results.lock().unwrap().push(LinkCheckResult {
-                    url: sub,
-                    source_url: link.clone(),
-                    status: sub_result.status,
-                    status_text: sub_result.status_text,
-                    error: sub_result.error,
-                    depth: 2,
-                });
-            }
-        }));
-    }
-
-    for h in handles {
-        let _ = h.await;
-    }
-
-    let final_results = results.lock().unwrap().clone();
-    Ok(final_results)
+fn default_max_depth() -> u32 {
+    1
+}
+fn default_check_timeout() -> u64 {
+    10
+}
+fn default_same_origin_only() -> bool {
+    true
 }
 
-async fn fetch_and_check(client: &reqwest::Client, url: &str) -> LinkCheckResult {
+const MAX_A11Y_HTML_BYTES: usize = 2_000_000;
+
+struct PageFetch {
+    status: Option<u16>,
+    status_text: String,
+    error: Option<String>,
+    html: Option<String>,
+}
+
+async fn get_page(client: &reqwest::Client, url: &str) -> PageFetch {
     match client.get(url).send().await {
-        Ok(resp) => LinkCheckResult {
-            url: url.to_string(),
-            source_url: url.to_string(),
-            status: Some(resp.status().as_u16()),
-            status_text: resp.status().canonical_reason().unwrap_or("unknown").to_string(),
-            error: None,
-            depth: 0,
-        },
-        Err(e) => LinkCheckResult {
-            url: url.to_string(),
-            source_url: url.to_string(),
+        Ok(resp) => {
+            let status = resp.status();
+            let html = resp
+                .text()
+                .await
+                .ok()
+                .map(|t| t.chars().take(MAX_A11Y_HTML_BYTES).collect());
+            PageFetch {
+                status: Some(status.as_u16()),
+                status_text: status.canonical_reason().unwrap_or("unknown").to_string(),
+                error: None,
+                html,
+            }
+        }
+        Err(e) => PageFetch {
             status: None,
             status_text: "error".into(),
             error: Some(e.to_string()),
-            depth: 0,
+            html: None,
         },
     }
 }
 
-async fn check_single_link(client: &reqwest::Client, url: &str) -> LinkCheckResult {
+async fn head_page(client: &reqwest::Client, url: &str) -> PageFetch {
     match client.head(url).send().await {
-        Ok(resp) => LinkCheckResult {
-            url: url.to_string(),
-            source_url: String::new(),
-            status: Some(resp.status().as_u16()),
-            status_text: resp.status().canonical_reason().unwrap_or("unknown").to_string(),
-            error: None,
-            depth: 1,
-        },
-        Err(e) => LinkCheckResult {
-            url: url.to_string(),
-            source_url: String::new(),
+        Ok(resp) => {
+            let status = resp.status();
+            PageFetch {
+                status: Some(status.as_u16()),
+                status_text: status.canonical_reason().unwrap_or("unknown").to_string(),
+                error: None,
+                html: None,
+            }
+        }
+        Err(e) => PageFetch {
             status: None,
             status_text: "error".into(),
             error: Some(e.to_string()),
-            depth: 1,
+            html: None,
         },
     }
 }
 
-async fn extract_links(client: &reqwest::Client, url: &str) -> Result<Vec<String>, String> {
-    let html = client.get(url).send().await
-        .map_err(|e| format!("{}", e))?
-        .text().await
-        .map_err(|e| format!("{}", e))?;
-
-    let document = scraper::Html::parse_document(&html);
+fn extract_links_from_html(html: &str, base_url: &str) -> Vec<String> {
+    let document = scraper::Html::parse_document(html);
     let selector = scraper::Selector::parse("a[href]").unwrap();
     let mut links = Vec::new();
 
     for el in document.select(&selector) {
         if let Some(href) = el.value().attr("href") {
             let href = href.trim();
-            if href.is_empty() || href.starts_with('#') || href.starts_with("javascript:") || href.starts_with("mailto:") {
+            if href.is_empty()
+                || href.starts_with('#')
+                || href.starts_with("javascript:")
+                || href.starts_with("mailto:")
+            {
                 continue;
             }
-            if let Ok(base) = reqwest::Url::parse(url) {
+            if let Ok(base) = reqwest::Url::parse(base_url) {
                 if let Ok(resolved) = base.join(href) {
                     let s = resolved.as_str().to_string();
                     if s.starts_with("http") {
@@ -539,5 +506,226 @@ async fn extract_links(client: &reqwest::Client, url: &str) -> Result<Vec<String
 
     links.sort();
     links.dedup();
-    Ok(links)
+    links
+}
+
+fn scan_a11y(html: Option<&str>) -> Vec<A11yIssue> {
+    html.map(|h| crate::a11y::run_a11y_scan(h, &A11yCheckConfig::default()))
+        .unwrap_or_default()
+}
+
+const MAX_LINK_CHECKS: usize = 500;
+
+fn origin_matches(seed: &Option<reqwest::Url>, url: &str) -> bool {
+    seed.as_ref().map_or(true, |o| {
+        reqwest::Url::parse(url)
+            .map(|u| u.origin() == o.origin())
+            .unwrap_or(false)
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn check_links(
+    app: AppHandle,
+    url: String,
+    options: CheckLinksOptions,
+    state: State<'_, AppState>,
+) -> Result<Vec<LinkCheckResult>, String> {
+    let started_at = chrono::Utc::now().to_rfc3339();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(options.timeout_secs))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let parsed = reqwest::Url::parse(&url).map_err(|_| "Invalid URL".to_string())?;
+    let origin = if options.same_origin_only {
+        Some(parsed.clone())
+    } else {
+        None
+    };
+    let max_depth = options.max_depth.min(5);
+    let include_a11y = options.include_accessibility;
+    let semaphore = Arc::new(Semaphore::new(10));
+    let results = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let visited = Arc::new(std::sync::Mutex::new(HashSet::from([url.clone()])));
+    let checked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+    // Seed page — always GET so the body can feed link extraction and a11y
+    let seed_fetch = get_page(&client, &url).await;
+    let seed_html = seed_fetch.html.clone();
+    let seed_result = LinkCheckResult {
+        url: url.clone(),
+        source_url: url.clone(),
+        status: seed_fetch.status,
+        status_text: seed_fetch.status_text,
+        error: seed_fetch.error,
+        depth: 0,
+        a11y_issues: if include_a11y {
+            scan_a11y(seed_html.as_deref())
+        } else {
+            Vec::new()
+        },
+    };
+    let _ = app.emit("linkcheck:result", &seed_result);
+    results.lock().unwrap().push(seed_result);
+
+    if max_depth > 0 {
+        // Level-order crawl: each level fetches its frontier (GET when the
+        // body is needed for expansion or a11y, HEAD otherwise) and pages
+        // that respond OK and aren't at max depth feed the next frontier.
+        // Frontier entries are (url, source_url).
+        let mut frontier: Vec<(String, String)> = seed_html
+            .as_deref()
+            .map(|h| extract_links_from_html(h, &url))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|l| origin_matches(&origin, l))
+            .filter(|l| visited.lock().unwrap().insert(l.clone()))
+            .map(|l| (l, url.clone()))
+            .collect();
+        frontier.sort();
+        for (l, s) in &frontier {
+            let _ = app.emit(
+                "linkcheck:discovered",
+                serde_json::json!({
+                    "url": l,
+                    "depth": 1,
+                    "sourceUrl": s,
+                }),
+            );
+        }
+
+        for depth in 1..=max_depth {
+            if frontier.is_empty() {
+                break;
+            }
+            let next_frontier = Arc::new(std::sync::Mutex::new(Vec::<(String, String)>::new()));
+            let mut handles = Vec::new();
+
+            for (link, source) in frontier.drain(..) {
+                if checked.load(std::sync::atomic::Ordering::SeqCst) >= MAX_LINK_CHECKS {
+                    break;
+                }
+
+                let client = client.clone();
+                let app = app.clone();
+                let results = results.clone();
+                let sem = semaphore.clone();
+                let visited = visited.clone();
+                let origin = origin.clone();
+                let next_frontier = next_frontier.clone();
+                let checked = checked.clone();
+                let link = link.clone();
+                let can_expand = depth < max_depth;
+                let need_body = can_expand || include_a11y;
+
+                let permit = sem.acquire_owned().await.map_err(|e| e.to_string())?;
+                checked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                handles.push(tokio::spawn(async move {
+                    let _permit = permit;
+                    let _ = app.emit(
+                        "linkcheck:checking",
+                        serde_json::json!({
+                            "url": link.clone(),
+                            "depth": depth,
+                            "sourceUrl": source.clone(),
+                        }),
+                    );
+                    let fetch = if need_body {
+                        get_page(&client, &link).await
+                    } else {
+                        head_page(&client, &link).await
+                    };
+                    let ok = fetch.status.map(|s| s < 400).unwrap_or(false);
+                    let a11y_issues = if include_a11y {
+                        scan_a11y(fetch.html.as_deref())
+                    } else {
+                        Vec::new()
+                    };
+                    let result_entry = LinkCheckResult {
+                        url: link.clone(),
+                        source_url: source,
+                        status: fetch.status,
+                        status_text: fetch.status_text,
+                        error: fetch.error,
+                        depth,
+                        a11y_issues,
+                    };
+                    let _ = app.emit("linkcheck:result", &result_entry);
+                    results.lock().unwrap().push(result_entry);
+
+                    if !can_expand || !ok {
+                        return;
+                    }
+                    let sub_links = fetch
+                        .html
+                        .as_deref()
+                        .map(|h| extract_links_from_html(h, &link))
+                        .unwrap_or_default();
+                    let mut next = next_frontier.lock().unwrap();
+                    for sub in sub_links {
+                        if checked.load(std::sync::atomic::Ordering::SeqCst) >= MAX_LINK_CHECKS {
+                            break;
+                        }
+                        if !origin_matches(&origin, &sub) {
+                            continue;
+                        }
+                        if visited.lock().unwrap().insert(sub.clone()) {
+                            let _ = app.emit(
+                                "linkcheck:discovered",
+                                serde_json::json!({
+                                    "url": sub,
+                                    "depth": depth + 1,
+                                    "sourceUrl": link,
+                                }),
+                            );
+                            next.push((sub, link.clone()));
+                        }
+                    }
+                }));
+            }
+
+            for h in handles {
+                let _ = h.await;
+            }
+
+            let mut next = next_frontier.lock().unwrap().clone();
+            next.sort();
+            next.dedup();
+            frontier = next;
+        }
+    }
+
+    let final_results = results.lock().unwrap().clone();
+    let scan = LinkCheckScan {
+        id: uuid::Uuid::new_v4().to_string(),
+        url,
+        max_depth,
+        same_origin_only: options.same_origin_only,
+        include_accessibility: include_a11y,
+        started_at,
+        completed_at: Some(chrono::Utc::now().to_rfc3339()),
+        results: final_results.clone(),
+    };
+    let _ = state.storage.save_link_check_scan(&scan);
+    Ok(final_results)
+}
+
+#[tauri::command]
+pub fn list_link_check_scans(state: State<'_, AppState>) -> Result<Vec<LinkCheckScanInfo>, String> {
+    Ok(state.storage.list_link_check_scans())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn get_link_check_scan(
+    state: State<'_, AppState>,
+    scan_id: String,
+) -> Result<LinkCheckScan, String> {
+    state.storage.load_link_check_scan(&scan_id)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn delete_link_check_scan(state: State<'_, AppState>, scan_id: String) -> Result<(), String> {
+    state.storage.delete_link_check_scan(&scan_id)
 }

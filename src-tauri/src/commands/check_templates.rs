@@ -3,7 +3,7 @@ use serde::Deserialize;
 use tauri::State;
 use uuid::Uuid;
 
-use crate::models::{CheckTemplate, CheckType, SelectorCheck};
+use crate::models::{A11yCheckConfig, CheckTemplate, CheckType, SelectorCheck};
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -16,6 +16,7 @@ pub struct CheckInput {
     pub pattern: Option<String>,
     pub attribute_name: Option<String>,
     pub attribute_value: Option<String>,
+    pub a11y_config: Option<A11yCheckConfig>,
 }
 
 #[tauri::command]
@@ -47,6 +48,7 @@ pub fn create_check_template(
                 pattern: c.pattern,
                 attribute_name: c.attribute_name,
                 attribute_value: c.attribute_value,
+                a11y_config: c.a11y_config,
             })
             .collect(),
         created_at: now.clone(),
@@ -94,6 +96,7 @@ pub fn update_check_template(
                 pattern: c.pattern,
                 attribute_name: c.attribute_name,
                 attribute_value: c.attribute_value,
+                a11y_config: c.a11y_config,
             })
             .collect();
     }

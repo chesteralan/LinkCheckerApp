@@ -67,7 +67,11 @@ pub fn create_target_list(
     folder: Option<String>,
 ) -> Result<TargetList, String> {
     let now = Utc::now().to_rfc3339();
-    let urls: Vec<String> = urls.iter().map(|u| normalize_url(u)).filter(|u| !u.is_empty()).collect();
+    let urls: Vec<String> = urls
+        .iter()
+        .map(|u| normalize_url(u))
+        .filter(|u| !u.is_empty())
+        .collect();
     let list = TargetList {
         id: Uuid::new_v4().to_string(),
         name,

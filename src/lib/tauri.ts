@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { TargetList, CheckTemplate, Audit, AuditRun, SelectorCheck } from '@/types'
+import type { TargetList, CheckTemplate, Audit, AuditRun, SelectorCheck, A11yAudit, A11yCheckConfig, A11yReport, A11yReportInfo, AuditConfig, LinkCheckResult, LinkCheckScan, LinkCheckScanInfo } from '@/types'
 
 export function normalizeUrl(raw: string): string {
   let url = raw.trim()
@@ -91,9 +91,45 @@ export const setHistoryRetention = (days: number) => invoke<void>('set_history_r
 
 export const checkLinks = (
   url: string,
-  options: { maxDepth: number; timeoutSecs: number; sameOriginOnly: boolean },
+  options: { maxDepth: number; timeoutSecs: number; sameOriginOnly: boolean; includeAccessibility?: boolean },
 ) =>
-  invoke<{ url: string; sourceUrl: string; status: number | null; statusText: string; error: string | null; depth: number }[]>(
+  invoke<LinkCheckResult[]>(
     'check_links',
     { url, options },
   )
+
+export const listLinkCheckScans = () => invoke<LinkCheckScanInfo[]>('list_link_check_scans')
+export const getLinkCheckScan = (scanId: string) => invoke<LinkCheckScan>('get_link_check_scan', { scanId })
+export const deleteLinkCheckScan = (scanId: string) => invoke<void>('delete_link_check_scan', { scanId })
+
+// Accessibility Audits
+export const listA11yAudits = () => invoke<A11yAudit[]>('list_a11y_audits')
+export const createA11yAudit = (data: {
+  name: string
+  targetListId: string
+  engine?: string
+  a11yConfig?: A11yCheckConfig
+  config: AuditConfig
+  originOverride?: string
+  urlPostfix?: string
+  pinned?: boolean
+  folder?: string | null
+}) => invoke<A11yAudit>('create_a11y_audit', { input: data })
+export const updateA11yAudit = (data: {
+  id: string
+  name?: string
+  targetListId?: string
+  engine?: string
+  a11yConfig?: A11yCheckConfig
+  config?: AuditConfig
+  originOverride?: string
+  urlPostfix?: string
+  pinned?: boolean
+  folder?: string | null
+}) => invoke<A11yAudit>('update_a11y_audit', data)
+export const deleteA11yAudit = (id: string) => invoke<void>('delete_a11y_audit', { id })
+export const runA11yAudit = (auditId: string) => invoke<void>('run_a11y_audit', { auditId })
+export const cancelA11yRun = () => invoke<void>('cancel_a11y_run')
+export const listA11yReports = () => invoke<A11yReportInfo[]>('list_a11y_reports')
+export const getA11yReport = (reportId: string) => invoke<A11yReport>('get_a11y_report', { reportId })
+export const deleteA11yReport = (reportId: string) => invoke<void>('delete_a11y_report', { reportId })

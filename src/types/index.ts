@@ -19,6 +19,13 @@ export interface SelectorCheck {
   pattern?: string
   attributeName?: string
   attributeValue?: string
+  a11yConfig?: A11yCheckConfig
+}
+
+export interface A11yCheckConfig {
+  minSeverity: 'critical' | 'serious' | 'moderate' | 'minor'
+  categories: string[]
+  standards?: string[]
 }
 
 export interface CheckTemplate {
@@ -67,6 +74,10 @@ export interface A11yIssue {
   element: string
   selector: string
   message: string
+  severity?: 'critical' | 'serious' | 'moderate' | 'minor'
+  wcag?: string
+  standards?: string[]
+  helpUrl?: string | null
 }
 
 export interface SelectorResult {
@@ -106,4 +117,87 @@ export interface AuditRun {
   status: 'running' | 'completed' | 'cancelled' | 'error'
   results: PageResult[]
   summary: RunSummary
+}
+
+export interface A11yAudit {
+  id: string
+  name: string
+  targetListId: string
+  engine: string
+  a11yConfig: A11yCheckConfig
+  config: AuditConfig
+  originOverride?: string
+  urlPostfix?: string
+  createdAt: string
+  pinned: boolean
+  folder?: string
+}
+
+export interface A11yPageResult {
+  url: string
+  pageTitle: string | null
+  status: number | null
+  statusText: string
+  responseTimeMs: number | null
+  error: string | null
+  issues: A11yIssue[]
+}
+
+export interface A11ySummary {
+  totalPages: number
+  pagesWithIssues: number
+  errored: number
+  critical: number
+  serious: number
+  moderate: number
+  minor: number
+}
+
+export interface A11yReport {
+  id: string
+  auditId: string
+  startedAt: string
+  completedAt: string | null
+  status: string
+  results: A11yPageResult[]
+  summary: A11ySummary
+  standards?: string[]
+}
+
+export interface A11yReportInfo {
+  id: string
+  auditId: string
+  startedAt: string
+  timestampMs: number
+}
+
+export interface LinkCheckResult {
+  url: string
+  sourceUrl: string
+  status: number | null
+  statusText: string
+  error: string | null
+  depth: number
+  a11yIssues: A11yIssue[]
+}
+
+export interface LinkCheckScan {
+  id: string
+  url: string
+  maxDepth: number
+  sameOriginOnly: boolean
+  includeAccessibility: boolean
+  startedAt: string
+  completedAt: string | null
+  results: LinkCheckResult[]
+}
+
+export interface LinkCheckScanInfo {
+  id: string
+  url: string
+  startedAt: string
+  timestampMs: number
+  totalLinks: number
+  broken: number
+  a11yIssues: number
 }
