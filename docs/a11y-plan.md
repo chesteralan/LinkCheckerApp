@@ -232,6 +232,58 @@ Remaining gaps vs. original sketch: no viewport emulation, no
 wait-for-selector/network-idle, sequential pages only (no parallelism),
 and no report diffing.
 
+**Follow-ups shipped after Phase D:** score (severity-weighted 0–100),
+score trend chart, report-to-report diffing (`A11yReportDiffPage`), and
+self-contained HTML report export.
+
+---
+
+## Phase E — Standards coverage & rule gaps (planned)
+
+### Standards landscape
+
+Nearly all accessibility standards are WCAG-derived, so "support" is
+mostly tag/reporting, not new rules:
+
+| Standard | Relationship | Approach |
+|---|---|---|
+| WCAG 2.0 / 2.1 / 2.2 | The base | Expose level selection; axe `runOnly` gains `wcag22a`/`wcag22aa` |
+| Section 508 (US federal) | Harmonized w/ WCAG 2.0 | axe emits `section508` tags — surface on issues |
+| EN 301 549 (EU procurement, behind the European Accessibility Act) | WCAG 2.1 AA-aligned | axe emits `EN-301-549` tags — surface on issues |
+| ADA (US) | De-facto WCAG 2.0/2.1 AA via case law | Report labeling only |
+| RGAA / BITV / Stanca / IS 5568 | National WCAG transpositions | Report labeling only |
+| WCAG 3.0 (bronze/silver/gold) | Draft, not finalized | Revisit when published |
+
+Non-WCAG frameworks that add real checks: axe `best-practice` rules
+(~30 non-WCAG rules: marquee, meta-refresh, duplicate landmarks),
+usability heuristics, SEO-adjacent checks.
+
+### Rule gaps (static engine)
+
+Quick wins shipped: `wcag22*`/`best-practice` axe tags, standards
+tags on issues, `nested-interactive`, `aria-hidden-focusable`,
+dangling `aria-controls`/`aria-owns`, `missing-autocomplete`,
+`marquee`/`blink`, `meta-refresh`, `target-blank-noopener`,
+`onclick-noninteractive`, `radio-no-legend`.
+
+Still missing (next batch):
+
+- Landmarks: `banner`/`contentinfo`/`nav`/`search`/`form` coverage,
+  implicit-vs-explicit role conflicts
+- ARIA: `aria-expanded`/`aria-controls` pairing, live-region misuse,
+  `role` on native elements that already carry the semantics
+- Interactive: `tabindex="-1"` on naturally focusable elements,
+  drag-only interactions (needs browser), focus-visible (needs CSS
+  analysis — browser engine)
+- WCAG 2.2: target size 2.5.8, focus appearance 2.4.11/13, dragging
+  2.5.7, consistent help 3.2.6, redundant entry 3.3.7, accessible
+  authentication 3.3.8 — mostly browser-engine territory
+- Content: `<abbr>` without expansion, images-of-text heuristic,
+  reading-level proxies
+- Standards picker on `A11yAudit`: filter by WCAG 2.1 AA / 2.2 AA /
+  Section 508 / EN 301 549 (mostly a config + reporting layer since
+  underlying checks overlap)
+
 ---
 
 ## File touch-list (Phases A–C)

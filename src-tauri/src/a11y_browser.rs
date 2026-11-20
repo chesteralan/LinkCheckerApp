@@ -8,9 +8,9 @@ use futures::StreamExt;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::a11y_runner::{apply_a11y_origin_override, apply_a11y_url_postfix};
 use crate::models::*;
 use crate::AppState;
-use crate::a11y_runner::{apply_a11y_origin_override, apply_a11y_url_postfix};
 
 const AXE_SOURCE: &str = include_str!("../assets/axe.min.js");
 const MAX_NODES_PER_VIOLATION: usize = 25;
@@ -59,7 +59,12 @@ fn find_browser_executable() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    for name in ["chromium", "google-chrome", "google-chrome-stable", "chrome"] {
+    for name in [
+        "chromium",
+        "google-chrome",
+        "google-chrome-stable",
+        "chrome",
+    ] {
         if let Ok(out) = std::process::Command::new("which").arg(name).output() {
             if out.status.success() {
                 let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -75,12 +80,28 @@ fn find_browser_executable() -> Option<PathBuf> {
 fn wcag_from_tags(tags: &[String]) -> String {
     for tag in tags {
         if let Some(digits) = tag.strip_prefix("wcag") {
-            if digits.len() == 3 && digits.chars().all(|c| c.is_ascii_digit()) {
-                return format!("{}.{}.{}", &digits[0..1], &digits[1..2], &digits[2..3]);
+            // Criterion tags look like wcag111 (1.1.1) or wcag2411 (2.4.11):
+            // first digit = major, second = minor, rest = success criterion.
+            if digits.len() >= 3 && digits.chars().all(|c| c.is_ascii_digit()) {
+                return format!("{}.{}.{}", &digits[0..1], &digits[1..2], &digits[2..]);
             }
         }
     }
     String::new()
+}
+
+fn standards_from_tags(tags: &[String]) -> Vec<String> {
+    tags.iter()
+        .filter(|t| {
+            let l = t.to_lowercase();
+            l.starts_with("section508")
+                || l.starts_with("en-301")
+                || l == "act"
+                || l == "best-practice"
+                || l == "experimental"
+        })
+        .cloned()
+        .collect()
 }
 
 fn element_name_from_html(html: &str) -> String {
@@ -112,14 +133,17 @@ fn violations_to_issues(violations: &[AxeViolation]) -> Vec<A11yIssue> {
     let mut issues = Vec::new();
     'outer: for v in violations {
         let wcag = wcag_from_tags(&v.tags);
-        let severity = v
-            .impact
-            .clone()
-            .unwrap_or_else(|| "moderate".into());
+        let standards = standards_from_tags(&v.tags);
+        let severity = v.impact.clone().unwrap_or_else(|| "moderate".into());
         let message = v
             .help
             .clone()
-            .or_else(|| v.nodes.first().and_then(|n| n.html.clone()).map(|_| String::new()))
+            .or_else(|| {
+                v.nodes
+                    .first()
+                    .and_then(|n| n.html.clone())
+                    .map(|_| String::new())
+            })
             .filter(|m| !m.is_empty())
             .unwrap_or_else(|| v.id.clone());
         let nodes: Vec<&AxeNode> = v.nodes.iter().take(MAX_NODES_PER_VIOLATION).collect();
@@ -131,6 +155,7 @@ fn violations_to_issues(violations: &[AxeViolation]) -> Vec<A11yIssue> {
                 message,
                 severity,
                 wcag,
+                standards,
                 help_url: v.help_url.clone(),
             });
         } else {
@@ -149,6 +174,7 @@ fn violations_to_issues(violations: &[AxeViolation]) -> Vec<A11yIssue> {
                     message: message.clone(),
                     severity: severity.clone(),
                     wcag: wcag.clone(),
+                    standards: standards.clone(),
                     help_url: v.help_url.clone(),
                 });
             }
@@ -187,9 +213,7 @@ pub async fn run_axe_audit(
         .await
         .map_err(|e| format!("failed to launch browser: {}", e))?;
 
-    tokio::spawn(async move {
-        while handler.next().await.is_some() {}
-    });
+    tokio::spawn(async move { while handler.next().await.is_some() {} });
 
     let results = Arc::new(std::sync::Mutex::new(Vec::with_capacity(total)));
     let checked = Arc::new(std::sync::Mutex::new(0usize));
@@ -239,10 +263,13 @@ pub async fn run_axe_audit(
             results.push(page_result.clone());
             let mut checked = checked.lock().unwrap();
             *checked += 1;
-            let _ = app.emit("a11y:progress", serde_json::json!({
-                "checked": *checked,
-                "total": total,
-            }));
+            let _ = app.emit(
+                "a11y:progress",
+                serde_json::json!({
+                    "checked": *checked,
+                    "total": total,
+                }),
+            );
             let _ = app.emit("a11y:result", &page_result);
 
             let partial = A11yReport {
@@ -315,7 +342,7 @@ async fn scan_page_with_browser(
 
         let violations_json: String = page
             .evaluate(
-                r#"axe.run({ runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }, resultTypes: ['violations'] }).then(r => JSON.stringify(r.violations))"#,
+                r#"axe.run({ runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa', 'best-practice'] }, resultTypes: ['violations'] }).then(r => JSON.stringify(r.violations))"#,
             )
             .await
             .map_err(|e| format!("axe.run: {}", e))?
@@ -379,21 +406,22 @@ mod tests {
             .build()
             .unwrap();
         let (mut browser, mut handler) = Browser::launch(config).await.unwrap();
-        tokio::spawn(async move {
-            while handler.next().await.is_some() {}
-        });
+        tokio::spawn(async move { while handler.next().await.is_some() {} });
 
         let url = std::env::var("A11Y_TEST_URL").unwrap_or_else(|_| "https://example.com".into());
-        let result = scan_page_with_browser(
-            &browser,
-            &url,
-            &A11yCheckConfig::default(),
-        )
-        .await
-        .unwrap();
-        eprintln!("title={:?} issues={}", result.page_title, result.issues.len());
+        let result = scan_page_with_browser(&browser, &url, &A11yCheckConfig::default())
+            .await
+            .unwrap();
+        eprintln!(
+            "title={:?} issues={}",
+            result.page_title,
+            result.issues.len()
+        );
         for i in result.issues.iter().take(10) {
-            eprintln!("  [{}] {} {} — {}", i.severity, i.wcag, i.issue_type, i.message);
+            eprintln!(
+                "  [{}] {} {} — {}",
+                i.severity, i.wcag, i.issue_type, i.message
+            );
         }
         assert!(result.error.is_none());
 

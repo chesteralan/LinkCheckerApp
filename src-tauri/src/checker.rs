@@ -69,10 +69,7 @@ impl Checker {
                 .join("; ");
             if let Ok(v) = reqwest::header::HeaderValue::from_str(&cookie_str) {
                 client_builder = client_builder.default_headers(
-                    reqwest::header::HeaderMap::from_iter([(
-                        reqwest::header::COOKIE,
-                        v,
-                    )]),
+                    reqwest::header::HeaderMap::from_iter([(reqwest::header::COOKIE, v)]),
                 );
             }
         }
@@ -109,10 +106,13 @@ impl Checker {
                 results.push(page_result.clone());
                 let mut checked = checked.lock().unwrap();
                 *checked += 1;
-                let _ = app.emit("run:progress", serde_json::json!({
-                    "checked": *checked,
-                    "total": total,
-                }));
+                let _ = app.emit(
+                    "run:progress",
+                    serde_json::json!({
+                        "checked": *checked,
+                        "total": total,
+                    }),
+                );
                 let _ = app.emit("run:result", &page_result);
 
                 let partial = AuditRun {
@@ -231,7 +231,12 @@ async fn check_url(
     }
 }
 
-fn run_checks(status_code: u16, html: &str, page_url: &str, checks: &[SelectorCheck]) -> Vec<SelectorResult> {
+fn run_checks(
+    status_code: u16,
+    html: &str,
+    page_url: &str,
+    checks: &[SelectorCheck],
+) -> Vec<SelectorResult> {
     checks
         .iter()
         .map(|check| {
@@ -256,7 +261,11 @@ fn run_selector_check(check: &SelectorCheck, html: &str) -> SelectorResult {
             let count = matches.len();
             let text_content = matches.first().and_then(|el| {
                 let text: String = el.text().collect::<Vec<_>>().join(" ");
-                if text.is_empty() { None } else { Some(text) }
+                if text.is_empty() {
+                    None
+                } else {
+                    Some(text)
+                }
             });
             SelectorResult {
                 selector_check_id: check.id.clone(),
@@ -384,7 +393,11 @@ fn run_attribute_check(check: &SelectorCheck, html: &str) -> SelectorResult {
                 label: check.label.clone(),
                 found,
                 count,
-                text_content: if texts.is_empty() { None } else { Some(texts.join(", ")) },
+                text_content: if texts.is_empty() {
+                    None
+                } else {
+                    Some(texts.join(", "))
+                },
                 check_type: CheckType::Attribute,
                 a11y_issues: vec![],
             }
@@ -469,7 +482,10 @@ fn run_js_check(check: &SelectorCheck, html: &str, page_url: &str) -> SelectorRe
     match context.eval(Source::from_bytes(&js_code)) {
         Ok(val) => {
             let pass = val.as_boolean().unwrap_or(false);
-            let display = val.to_string(&mut context).map(|s| s.to_std_string().unwrap_or_default()).unwrap_or_default();
+            let display = val
+                .to_string(&mut context)
+                .map(|s| s.to_std_string().unwrap_or_default())
+                .unwrap_or_default();
             SelectorResult {
                 selector_check_id: check.id.clone(),
                 selector: check.selector.clone(),
@@ -551,33 +567,51 @@ mod tests {
 
     #[test]
     fn test_apply_url_postfix_none() {
-        assert_eq!(apply_url_postfix("https://example.com", &None), "https://example.com");
+        assert_eq!(
+            apply_url_postfix("https://example.com", &None),
+            "https://example.com"
+        );
     }
 
     #[test]
     fn test_apply_url_postfix_empty() {
-        assert_eq!(apply_url_postfix("https://example.com", &Some(String::new())), "https://example.com");
+        assert_eq!(
+            apply_url_postfix("https://example.com", &Some(String::new())),
+            "https://example.com"
+        );
     }
 
     #[test]
     fn test_apply_url_postfix_applied() {
-        assert_eq!(apply_url_postfix("https://example.com/page", &Some(".html".to_string())), "https://example.com/page.html");
+        assert_eq!(
+            apply_url_postfix("https://example.com/page", &Some(".html".to_string())),
+            "https://example.com/page.html"
+        );
     }
 
     #[test]
     fn test_apply_origin_override_no_override() {
-        assert_eq!(apply_origin_override("https://example.com/page", &None), "https://example.com/page");
+        assert_eq!(
+            apply_origin_override("https://example.com/page", &None),
+            "https://example.com/page"
+        );
     }
 
     #[test]
     fn test_apply_origin_override_empty() {
-        assert_eq!(apply_origin_override("https://example.com/page", &Some(String::new())), "https://example.com/page");
+        assert_eq!(
+            apply_origin_override("https://example.com/page", &Some(String::new())),
+            "https://example.com/page"
+        );
     }
 
     #[test]
     fn test_apply_origin_override_replaces_origin() {
         assert_eq!(
-            apply_origin_override("https://old.com/path?q=1", &Some("https://new.com".to_string())),
+            apply_origin_override(
+                "https://old.com/path?q=1",
+                &Some("https://new.com".to_string())
+            ),
             "https://new.com/path?q=1"
         );
     }
@@ -593,7 +627,10 @@ mod tests {
     #[test]
     fn test_apply_origin_override_trailing_slash() {
         assert_eq!(
-            apply_origin_override("https://old.com/path", &Some("https://new.com/".to_string())),
+            apply_origin_override(
+                "https://old.com/path",
+                &Some("https://new.com/".to_string())
+            ),
             "https://new.com/path"
         );
     }
@@ -612,9 +649,16 @@ mod tests {
             PageResult {
                 url: "https://a.com".into(),
                 error: None,
-                checks: vec![
-                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: Some("Hi".into()), check_type: CheckType::Selector, a11y_issues: vec![] },
-                ],
+                checks: vec![SelectorResult {
+                    selector_check_id: "1".into(),
+                    selector: "h1".into(),
+                    label: "Heading".into(),
+                    found: true,
+                    count: 1,
+                    text_content: Some("Hi".into()),
+                    check_type: CheckType::Selector,
+                    a11y_issues: vec![],
+                }],
                 response_time_ms: Some(100),
                 page_title: None,
                 status: Some(200),
@@ -623,9 +667,16 @@ mod tests {
             PageResult {
                 url: "https://b.com".into(),
                 error: None,
-                checks: vec![
-                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: Some("Hi".into()), check_type: CheckType::Selector, a11y_issues: vec![] },
-                ],
+                checks: vec![SelectorResult {
+                    selector_check_id: "1".into(),
+                    selector: "h1".into(),
+                    label: "Heading".into(),
+                    found: true,
+                    count: 1,
+                    text_content: Some("Hi".into()),
+                    check_type: CheckType::Selector,
+                    a11y_issues: vec![],
+                }],
                 response_time_ms: Some(200),
                 page_title: None,
                 status: Some(200),
@@ -646,9 +697,16 @@ mod tests {
             PageResult {
                 url: "https://a.com".into(),
                 error: None,
-                checks: vec![
-                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: true, count: 1, text_content: None, check_type: CheckType::Selector, a11y_issues: vec![] },
-                ],
+                checks: vec![SelectorResult {
+                    selector_check_id: "1".into(),
+                    selector: "h1".into(),
+                    label: "Heading".into(),
+                    found: true,
+                    count: 1,
+                    text_content: None,
+                    check_type: CheckType::Selector,
+                    a11y_issues: vec![],
+                }],
                 response_time_ms: Some(100),
                 page_title: None,
                 status: Some(200),
@@ -657,9 +715,16 @@ mod tests {
             PageResult {
                 url: "https://b.com".into(),
                 error: None,
-                checks: vec![
-                    SelectorResult { selector_check_id: "1".into(), selector: "h1".into(), label: "Heading".into(), found: false, count: 0, text_content: None, check_type: CheckType::Selector, a11y_issues: vec![] },
-                ],
+                checks: vec![SelectorResult {
+                    selector_check_id: "1".into(),
+                    selector: "h1".into(),
+                    label: "Heading".into(),
+                    found: false,
+                    count: 0,
+                    text_content: None,
+                    check_type: CheckType::Selector,
+                    a11y_issues: vec![],
+                }],
                 response_time_ms: Some(200),
                 page_title: None,
                 status: Some(200),
@@ -730,9 +795,7 @@ mod tests {
     #[test]
     fn test_run_checks_invalid_selector() {
         let html = "<html><body></body></html>";
-        let checks = vec![
-            make_check("c1", "[[invalid", "Bad"),
-        ];
+        let checks = vec![make_check("c1", "[[invalid", "Bad")];
         let results = run_checks(200, html, "https://example.com", &checks);
         assert_eq!(results.len(), 1);
         assert!(!results[0].found);

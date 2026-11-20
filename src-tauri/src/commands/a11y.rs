@@ -157,7 +157,10 @@ pub fn list_a11y_reports(state: State<'_, AppState>) -> Result<Vec<A11yReportInf
 }
 
 #[tauri::command]
-pub fn get_a11y_report(state: State<'_, AppState>, report_id: String) -> Result<A11yReport, String> {
+pub fn get_a11y_report(
+    state: State<'_, AppState>,
+    report_id: String,
+) -> Result<A11yReport, String> {
     state.storage.load_a11y_report(&report_id)
 }
 

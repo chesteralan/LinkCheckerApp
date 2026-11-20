@@ -136,6 +136,8 @@ pub struct A11yIssue {
     #[serde(default)]
     pub wcag: String,
     #[serde(default)]
+    pub standards: Vec<String>,
+    #[serde(default)]
     pub help_url: Option<String>,
 }
 

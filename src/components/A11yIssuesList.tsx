@@ -40,6 +40,15 @@ export function A11yIssuesList({ issues, maxHeight }: { issues: A11yIssue[]; max
               <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1 rounded">
                 {issue.wcag}
               </span>
+              {(issue.standards ?? []).filter((s) => s !== 'wcag').map((s) => (
+                <span
+                  key={s}
+                  className="font-mono text-[10px] text-muted-foreground bg-muted/60 px-1 rounded"
+                  title="Also applies to"
+                >
+                  {s}
+                </span>
+              ))}
               <code className="text-[10px] text-muted-foreground">{issue.selector}</code>
             </div>
             <p className="mt-0.5">{issue.message}</p>

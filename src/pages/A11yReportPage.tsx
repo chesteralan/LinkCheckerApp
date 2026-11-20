@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getA11yReport, listA11yAudits, writeFile, deleteA11yReport } from '@/lib/tauri'
+import { getA11yReport, listA11yAudits, listA11yReports, writeFile, deleteA11yReport } from '@/lib/tauri'
 import { save } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { A11yIssuesList, A11ySeverityBadge } from '@/components/A11yIssuesList'
 import { Modal } from '@/components/Modal'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
-import type { A11yReport, A11yIssue } from '@/types'
+import { reportScore, scoreColor } from '@/utils/a11yScore'
+import { a11yReportToHtml } from '@/lib/a11yReportHtml'
+import type { A11yReport, A11yIssue, A11yReportInfo } from '@/types'
 
 const SEVERITY_FILTERS = ['all', 'critical', 'serious', 'moderate', 'minor'] as const
 
@@ -19,6 +22,9 @@ export function A11yReportPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [trend, setTrend] = useState<{ date: string; score: number }[]>([])
+  const [siblingReports, setSiblingReports] = useState<A11yReportInfo[]>([])
+  const [showCompare, setShowCompare] = useState(false)
 
   useEffect(() => {
     if (!reportId) return
@@ -27,6 +33,21 @@ export function A11yReportPage() {
         setReport(r)
         const audits = await listA11yAudits().catch(() => [])
         setAuditName(audits.find((a) => a.id === r.auditId)?.name ?? '')
+
+        const infos = (await listA11yReports().catch(() => []))
+          .filter((i) => i.auditId === r.auditId)
+          .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        setSiblingReports(infos.filter((i) => i.id !== r.id))
+
+        const recent = infos.slice(0, 8)
+        const scored = await Promise.all(
+          recent.map(async (i) => {
+            const rep = await getA11yReport(i.id).catch(() => null)
+            const score = rep ? reportScore(rep) : null
+            return score != null ? { date: i.startedAt.slice(0, 10), score } : null
+          }),
+        )
+        setTrend(scored.filter((x): x is { date: string; score: number } => x !== null).reverse())
       })
       .catch(() => setReport(null))
   }, [reportId])
@@ -55,6 +76,16 @@ export function A11yReportPage() {
   if (!report) return <div className="text-muted-foreground">Loading...</div>
 
   const s = report.summary
+  const score = reportScore(report)
+
+  async function handleExportHtml() {
+    const path = await save({
+      defaultPath: `a11y-report-${auditName || reportId}.html`,
+      filters: [{ name: 'HTML', extensions: ['html'] }],
+    })
+    if (!path) return
+    await writeFile(path, a11yReportToHtml(report, auditName))
+  }
 
   async function handleExport(format: 'json' | 'csv') {
     const ext = format
@@ -91,6 +122,17 @@ export function A11yReportPage() {
           <h2 className="text-2xl font-bold">{auditName || 'Accessibility Report'}</h2>
         </div>
         <div className="flex items-center gap-2">
+          {siblingReports.length > 0 && (
+            <button
+              onClick={() => setShowCompare(true)}
+              className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors"
+            >
+              Compare
+            </button>
+          )}
+          <button onClick={handleExportHtml} className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors">
+            Export HTML
+          </button>
           <button onClick={() => handleExport('json')} className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors">
             Export JSON
           </button>
@@ -117,10 +159,34 @@ export function A11yReportPage() {
         </div>
       </div>
 
-      <div className="text-sm text-muted-foreground">
-        {new Date(report.startedAt).toLocaleString()} · {s.totalPages} page{s.totalPages !== 1 ? 's' : ''}
-        {report.completedAt && ` · finished ${new Date(report.completedAt).toLocaleTimeString()}`}
+      <div className="text-sm text-muted-foreground flex items-center gap-3 flex-wrap">
+        <span>
+          {new Date(report.startedAt).toLocaleString()} · {s.totalPages} page{s.totalPages !== 1 ? 's' : ''}
+          {report.completedAt && ` · finished ${new Date(report.completedAt).toLocaleTimeString()}`}
+        </span>
+        {score != null && (
+          <span className={`text-lg font-bold ${scoreColor(score)}`} title="100 minus severity-weighted issue penalties, averaged across scanned pages">
+            {score}
+            <span className="text-xs font-normal text-muted-foreground">/100</span>
+          </span>
+        )}
       </div>
+
+      {trend.length >= 2 && (
+        <div className="border border-border rounded-lg p-3">
+          <h3 className="text-sm font-medium mb-2">Score trend — last {trend.length} reports</h3>
+          <div className="h-32">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trend} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Line type="monotone" dataKey="score" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <div className="border border-border rounded-lg p-3">
@@ -251,6 +317,21 @@ export function A11yReportPage() {
           <p className="text-sm text-muted-foreground">No pages match the current filter.</p>
         )}
       </div>
+
+      <Modal open={showCompare} onClose={() => setShowCompare(false)} title="Compare with another report">
+        <div className="space-y-2">
+          {siblingReports.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => navigate(`/accessibility/reports/diff/${reportId}/${r.id}`)}
+              className="w-full text-left border border-border rounded-lg p-3 hover:border-primary transition-colors"
+            >
+              <div className="text-sm font-medium">{new Date(r.startedAt).toLocaleString()}</div>
+              <div className="text-xs text-muted-foreground">{r.id.slice(0, 8)}</div>
+            </button>
+          ))}
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={confirmDelete}

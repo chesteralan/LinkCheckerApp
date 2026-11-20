@@ -17,6 +17,7 @@ import { LinkCheckHistoryPage } from '@/pages/LinkCheckHistoryPage'
 import { LinkCheckScanPage } from '@/pages/LinkCheckScanPage'
 import { AccessibilityPage } from '@/pages/AccessibilityPage'
 import { A11yReportPage } from '@/pages/A11yReportPage'
+import { A11yReportDiffPage } from '@/pages/A11yReportDiffPage'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useRun } from '@/hooks/useRun'
 import { useTheme } from '@/hooks/ThemeContext'
@@ -140,6 +141,7 @@ function App() {
               <Route path="/link-checker/history" element={<LinkCheckHistoryPage />} />
               <Route path="/link-checker/history/:scanId" element={<LinkCheckScanPage />} />
               <Route path="/accessibility" element={<AccessibilityPage />} />
+              <Route path="/accessibility/reports/diff/:idA/:idB" element={<A11yReportDiffPage />} />
               <Route path="/accessibility/reports/:reportId" element={<A11yReportPage />} />
             </Routes>
           </ErrorBoundary>

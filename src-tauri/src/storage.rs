@@ -1,5 +1,7 @@
+use crate::models::{
+    A11yReport, A11yReportInfo, AppData, AuditRun, LinkCheckScan, LinkCheckScanInfo, RunFileInfo,
+};
 use std::path::PathBuf;
-use crate::models::{AppData, A11yReport, A11yReportInfo, AuditRun, LinkCheckScan, LinkCheckScanInfo, RunFileInfo};
 
 #[cfg(test)]
 mod tests {
@@ -65,7 +67,8 @@ impl Storage {
 
     fn run_filepath(&self, run: &AuditRun) -> PathBuf {
         let ts = format_datetime_for_filename(&run.started_at);
-        self.history_dir().join(format!("run-{}-{}.json", ts, run.id))
+        self.history_dir()
+            .join(format!("run-{}-{}.json", ts, run.id))
     }
 
     fn run_filepath_by_id(&self, run_id: &str) -> Option<PathBuf> {
@@ -147,7 +150,9 @@ impl Storage {
             entries.reverse();
             for entry in entries {
                 let name = entry.file_name().to_string_lossy().to_string();
-                let stripped = name.strip_prefix("run-").and_then(|s| s.strip_suffix(".json"));
+                let stripped = name
+                    .strip_prefix("run-")
+                    .and_then(|s| s.strip_suffix(".json"));
                 if let Some(body) = stripped {
                     if let Some(sep) = body.rfind('-') {
                         let id = body[sep + 1..].to_string();
@@ -157,12 +162,17 @@ impl Storage {
                             .and_then(|t| t.duration_since(std::time::SystemTime::UNIX_EPOCH).ok())
                             .map(|d| d.as_millis() as i64)
                             .unwrap_or(0);
-                        let started_at = if let Some(dt) = chrono::DateTime::from_timestamp_millis(ms) {
-                            dt.to_rfc3339()
-                        } else {
-                            String::new()
-                        };
-                        infos.push(RunFileInfo { id, started_at, timestamp_ms: ms });
+                        let started_at =
+                            if let Some(dt) = chrono::DateTime::from_timestamp_millis(ms) {
+                                dt.to_rfc3339()
+                            } else {
+                                String::new()
+                            };
+                        infos.push(RunFileInfo {
+                            id,
+                            started_at,
+                            timestamp_ms: ms,
+                        });
                     }
                 }
             }
@@ -171,7 +181,9 @@ impl Storage {
     }
 
     pub fn load_run(&self, run_id: &str) -> Result<AuditRun, String> {
-        let path = self.run_filepath_by_id(run_id).ok_or_else(|| "Run not found".to_string())?;
+        let path = self
+            .run_filepath_by_id(run_id)
+            .ok_or_else(|| "Run not found".to_string())?;
         let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
         serde_json::from_str(&content).map_err(|e| e.to_string())
     }
@@ -221,7 +233,8 @@ impl Storage {
 
     fn a11y_report_filepath(&self, report: &A11yReport) -> PathBuf {
         let ts = format_datetime_for_filename(&report.started_at);
-        self.a11y_history_dir().join(format!("a11y-{}-{}.json", ts, report.id))
+        self.a11y_history_dir()
+            .join(format!("a11y-{}-{}.json", ts, report.id))
     }
 
     fn a11y_report_filepath_by_id(&self, report_id: &str) -> Option<PathBuf> {
@@ -272,7 +285,9 @@ impl Storage {
             for entry in entries {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
-                let stripped = name.strip_prefix("a11y-").and_then(|s| s.strip_suffix(".json"));
+                let stripped = name
+                    .strip_prefix("a11y-")
+                    .and_then(|s| s.strip_suffix(".json"));
                 if let Some(body) = stripped {
                     if let Some(sep) = body.rfind('-') {
                         let id = body[sep + 1..].to_string();
@@ -296,7 +311,12 @@ impl Storage {
                         } else {
                             String::new()
                         };
-                        infos.push(A11yReportInfo { id, audit_id, started_at, timestamp_ms: ms });
+                        infos.push(A11yReportInfo {
+                            id,
+                            audit_id,
+                            started_at,
+                            timestamp_ms: ms,
+                        });
                     }
                 }
             }
@@ -336,7 +356,8 @@ impl Storage {
 
     fn link_check_filepath(&self, scan: &LinkCheckScan) -> PathBuf {
         let ts = format_datetime_for_filename(&scan.started_at);
-        self.link_checks_dir().join(format!("linkcheck-{}-{}.json", ts, scan.id))
+        self.link_checks_dir()
+            .join(format!("linkcheck-{}-{}.json", ts, scan.id))
     }
 
     fn link_check_filepath_by_id(&self, scan_id: &str) -> Option<PathBuf> {
@@ -387,7 +408,9 @@ impl Storage {
             for entry in entries {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
-                let stripped = name.strip_prefix("linkcheck-").and_then(|s| s.strip_suffix(".json"));
+                let stripped = name
+                    .strip_prefix("linkcheck-")
+                    .and_then(|s| s.strip_suffix(".json"));
                 if let Some(body) = stripped {
                     if let Some(sep) = body.rfind('-') {
                         let id = body[sep + 1..].to_string();
@@ -405,7 +428,10 @@ impl Storage {
                                 let broken = s
                                     .results
                                     .iter()
-                                    .filter(|r| r.status.map(|x| x >= 400).unwrap_or(false) || r.error.is_some())
+                                    .filter(|r| {
+                                        r.status.map(|x| x >= 400).unwrap_or(false)
+                                            || r.error.is_some()
+                                    })
                                     .count();
                                 let a11y = s.results.iter().map(|r| r.a11y_issues.len()).sum();
                                 (s.url, s.started_at, s.results.len(), broken, a11y)

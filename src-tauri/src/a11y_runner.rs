@@ -31,17 +31,17 @@ impl A11yRunner {
         self.cancel_flag.clone()
     }
 
-    pub async fn run(&self, app: &AppHandle, audit: &A11yAudit, target_list: &TargetList) -> A11yReport {
+    pub async fn run(
+        &self,
+        app: &AppHandle,
+        audit: &A11yAudit,
+        target_list: &TargetList,
+    ) -> A11yReport {
         self.reset();
 
         if audit.engine == "axe-core" {
-            match crate::a11y_browser::run_axe_audit(
-                app,
-                audit,
-                target_list,
-                self.cancel_flag(),
-            )
-            .await
+            match crate::a11y_browser::run_axe_audit(app, audit, target_list, self.cancel_flag())
+                .await
             {
                 Ok(report) => return report,
                 Err(e) => {
@@ -93,10 +93,7 @@ impl A11yRunner {
                 .join("; ");
             if let Ok(v) = reqwest::header::HeaderValue::from_str(&cookie_str) {
                 client_builder = client_builder.default_headers(
-                    reqwest::header::HeaderMap::from_iter([(
-                        reqwest::header::COOKIE,
-                        v,
-                    )]),
+                    reqwest::header::HeaderMap::from_iter([(reqwest::header::COOKIE, v)]),
                 );
             }
         }
@@ -133,10 +130,13 @@ impl A11yRunner {
                 results.push(page_result.clone());
                 let mut checked = checked.lock().unwrap();
                 *checked += 1;
-                let _ = app.emit("a11y:progress", serde_json::json!({
-                    "checked": *checked,
-                    "total": total,
-                }));
+                let _ = app.emit(
+                    "a11y:progress",
+                    serde_json::json!({
+                        "checked": *checked,
+                        "total": total,
+                    }),
+                );
                 let _ = app.emit("a11y:result", &page_result);
 
                 let partial = A11yReport {

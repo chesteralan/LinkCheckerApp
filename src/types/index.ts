@@ -75,6 +75,7 @@ export interface A11yIssue {
   message: string
   severity?: 'critical' | 'serious' | 'moderate' | 'minor'
   wcag?: string
+  standards?: string[]
   helpUrl?: string | null
 }
 

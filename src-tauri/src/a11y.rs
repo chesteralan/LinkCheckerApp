@@ -7,16 +7,75 @@ use crate::models::{A11yCheckConfig, A11yIssue};
 const WCAG_DOCS: &str = "https://www.w3.org/WAI/WCAG21/Understanding";
 
 const VALID_ROLES: &[&str] = &[
-    "alert", "alertdialog", "application", "article", "banner", "button", "cell",
-    "checkbox", "columnheader", "combobox", "complementary", "contentinfo", "definition",
-    "dialog", "directory", "document", "feed", "figure", "form", "grid", "gridcell",
-    "group", "heading", "img", "link", "list", "listbox", "listitem", "log", "main",
-    "marquee", "math", "menu", "menubar", "menuitem", "menuitemcheckbox",
-    "menuitemradio", "navigation", "none", "note", "option", "presentation", "progressbar",
-    "radio", "radiogroup", "region", "row", "rowgroup", "rowheader", "scrollbar",
-    "search", "searchbox", "separator", "slider", "spinbutton", "status", "switch",
-    "tab", "table", "tablist", "tabpanel", "term", "textbox", "timer", "toolbar",
-    "tooltip", "tree", "treegrid", "treeitem",
+    "alert",
+    "alertdialog",
+    "application",
+    "article",
+    "banner",
+    "button",
+    "cell",
+    "checkbox",
+    "columnheader",
+    "combobox",
+    "complementary",
+    "contentinfo",
+    "definition",
+    "dialog",
+    "directory",
+    "document",
+    "feed",
+    "figure",
+    "form",
+    "grid",
+    "gridcell",
+    "group",
+    "heading",
+    "img",
+    "link",
+    "list",
+    "listbox",
+    "listitem",
+    "log",
+    "main",
+    "marquee",
+    "math",
+    "menu",
+    "menubar",
+    "menuitem",
+    "menuitemcheckbox",
+    "menuitemradio",
+    "navigation",
+    "none",
+    "note",
+    "option",
+    "presentation",
+    "progressbar",
+    "radio",
+    "radiogroup",
+    "region",
+    "row",
+    "rowgroup",
+    "rowheader",
+    "scrollbar",
+    "search",
+    "searchbox",
+    "separator",
+    "slider",
+    "spinbutton",
+    "status",
+    "switch",
+    "tab",
+    "table",
+    "tablist",
+    "tabpanel",
+    "term",
+    "textbox",
+    "timer",
+    "toolbar",
+    "tooltip",
+    "tree",
+    "treegrid",
+    "treeitem",
 ];
 
 pub fn run_a11y_scan(html: &str, config: &A11yCheckConfig) -> Vec<A11yIssue> {
@@ -86,6 +145,7 @@ fn issue(
         message: message.into(),
         severity: severity.into(),
         wcag: wcag.into(),
+        standards: vec!["wcag".into()],
         help_url: Some(format!("{}/{}", WCAG_DOCS, wcag)),
     }
 }
@@ -105,6 +165,7 @@ fn issue_raw(
         message: message.into(),
         severity: severity.into(),
         wcag: wcag.into(),
+        standards: vec!["wcag".into()],
         help_url: Some(format!("{}/{}", WCAG_DOCS, wcag)),
     }
 }
@@ -181,8 +242,7 @@ fn check_document(document: &Html, issues: &mut Vec<A11yIssue>) {
             if let Some(content) = meta.value().attr("content") {
                 let c = content.to_lowercase().replace(' ', "");
                 let zoom_locked = c.contains("user-scalable=no")
-                    || c
-                        .split(';')
+                    || c.split(';')
                         .find_map(|p| p.strip_prefix("maximum-scale="))
                         .and_then(|v| v.parse::<f32>().ok())
                         .map(|v| v < 2.0)
@@ -216,6 +276,16 @@ fn check_document(document: &Html, issues: &mut Vec<A11yIssue>) {
             "Document is missing a charset declaration",
         ));
     }
+
+    each(document, "meta[http-equiv='refresh' i]", |meta| {
+        issues.push(issue(
+            "meta-refresh",
+            "moderate",
+            "2.2.1",
+            meta,
+            "Page uses a meta refresh redirect which users cannot control",
+        ));
+    });
 }
 
 // ─── Headings ───
@@ -239,10 +309,7 @@ fn check_headings(document: &Html, issues: &mut Vec<A11yIssue>) {
         return;
     }
 
-    let h1_count = headings
-        .iter()
-        .filter(|h| h.value().name() == "h1")
-        .count();
+    let h1_count = headings.iter().filter(|h| h.value().name() == "h1").count();
     if h1_count == 0 {
         issues.push(issue(
             "missing-h1",
@@ -299,14 +366,8 @@ fn check_landmarks(document: &Html, issues: &mut Vec<A11yIssue>) {
     let has_skip_link = select(document, "a[href^='#']")
         .map(|sel| {
             document.select(&sel).any(|a| {
-                a.value()
-                    .attr("href")
-                    .map(|h| h.len() > 1)
-                    .unwrap_or(false)
-                    && a.text()
-                        .collect::<String>()
-                        .to_lowercase()
-                        .contains("skip")
+                a.value().attr("href").map(|h| h.len() > 1).unwrap_or(false)
+                    && a.text().collect::<String>().to_lowercase().contains("skip")
             })
         })
         .unwrap_or(false);
@@ -352,7 +413,14 @@ fn check_aria(document: &Html, issues: &mut Vec<A11yIssue>) {
         }
     });
 
-    for attr in ["aria-labelledby", "aria-describedby"] {
+    for attr in [
+        "aria-labelledby",
+        "aria-describedby",
+        "aria-controls",
+        "aria-owns",
+        "aria-details",
+        "aria-errormessage",
+    ] {
         if let Some(sel) = select(document, &format!("[{}]", attr)) {
             for el in document.select(&sel) {
                 if let Some(refs) = el.value().attr(attr) {
@@ -363,10 +431,7 @@ fn check_aria(document: &Html, issues: &mut Vec<A11yIssue>) {
                                 "serious",
                                 "4.1.2",
                                 &el,
-                                &format!(
-                                    "{} references non-existent id \"{}\"",
-                                    attr, r
-                                ),
+                                &format!("{} references non-existent id \"{}\"", attr, r),
                             ));
                         }
                     }
@@ -391,30 +456,71 @@ fn check_aria(document: &Html, issues: &mut Vec<A11yIssue>) {
             }
         }
     }
+
+    // aria-hidden="true" must not hide focusable content
+    if let Some(sel) = select(document, "[aria-hidden='true']") {
+        let focusable_desc = Selector::parse(
+            "a[href],button,input:not([type='hidden']),select,textarea,[tabindex]:not([tabindex='-1']),[contenteditable]",
+        )
+        .ok();
+        for el in document.select(&sel) {
+            let descendant_focusable = focusable_desc
+                .as_ref()
+                .map(|s| el.select(s).next().is_some())
+                .unwrap_or(false);
+            if is_focusable(&el) || descendant_focusable {
+                issues.push(issue(
+                    "aria-hidden-focusable",
+                    "serious",
+                    "4.1.2",
+                    &el,
+                    "aria-hidden=\"true\" element contains or is focusable content",
+                ));
+            }
+        }
+    }
+}
+
+fn is_focusable(el: &ElementRef) -> bool {
+    let tag = el.value().name();
+    if matches!(
+        tag,
+        "a" | "button" | "input" | "select" | "textarea" | "summary" | "iframe"
+    ) {
+        if tag == "a" && el.value().attr("href").is_none() {
+            // <a> without href isn't focusable
+        } else {
+            return true;
+        }
+    }
+    if let Some(t) = el.value().attr("tabindex") {
+        if t.trim() != "-1" {
+            return true;
+        }
+    }
+    el.value().attr("contenteditable").is_some()
 }
 
 // ─── Interactive ───
 
 fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
     // Images without usable alt text
-    each(document, "img", |img| {
-        match img.value().attr("alt") {
-            None => issues.push(issue(
-                "missing-alt",
-                "critical",
-                "1.1.1",
-                img,
-                "Image is missing alt text",
-            )),
-            Some("") => issues.push(issue(
-                "empty-alt",
-                "minor",
-                "1.1.1",
-                img,
-                "Image has empty alt text (ok only if decorative)",
-            )),
-            _ => {}
-        }
+    each(document, "img", |img| match img.value().attr("alt") {
+        None => issues.push(issue(
+            "missing-alt",
+            "critical",
+            "1.1.1",
+            img,
+            "Image is missing alt text",
+        )),
+        Some("") => issues.push(issue(
+            "empty-alt",
+            "minor",
+            "1.1.1",
+            img,
+            "Image has empty alt text (ok only if decorative)",
+        )),
+        _ => {}
     });
 
     // Links
@@ -461,7 +567,10 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
                     "moderate",
                     "2.4.3",
                     el,
-                    &format!("Element has tabindex=\"{}\" which disrupts natural tab order", v),
+                    &format!(
+                        "Element has tabindex=\"{}\" which disrupts natural tab order",
+                        v
+                    ),
                 ));
             }
         }
@@ -477,6 +586,68 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
             "Element uses autofocus which can disorient screen-reader users",
         ));
     });
+
+    // Nested interactive elements (a/button inside a/button)
+    if let Ok(sel) = Selector::parse("a,button") {
+        for el in document.select(&sel) {
+            if let Ok(inner) = Selector::parse("a[href],button") {
+                if el.select(&inner).next().is_some() {
+                    issues.push(issue(
+                        "nested-interactive",
+                        "serious",
+                        "4.1.2",
+                        &el,
+                        "Interactive element contains another interactive element",
+                    ));
+                }
+            }
+        }
+    }
+
+    // target="_blank" without rel="noopener"
+    each(document, "a[target='_blank']", |a| {
+        let safe = a
+            .value()
+            .attr("rel")
+            .map(|r| {
+                r.split_whitespace()
+                    .any(|t| t.eq_ignore_ascii_case("noopener"))
+            })
+            .unwrap_or(false);
+        if !safe {
+            issues.push(issue(
+                "target-blank-noopener",
+                "minor",
+                "3.2.5",
+                a,
+                "Link opens in a new tab without rel=\"noopener\"",
+            ));
+        }
+    });
+
+    // onclick on non-interactive elements without role/tabindex
+    each(document, "[onclick]", |el| {
+        let tag = el.value().name();
+        if matches!(
+            tag,
+            "a" | "button" | "input" | "select" | "textarea" | "label" | "summary"
+        ) {
+            return;
+        }
+        if el.value().attr("role").is_some() || el.value().attr("tabindex").is_some() {
+            return;
+        }
+        issues.push(issue(
+            "onclick-noninteractive",
+            "moderate",
+            "2.1.1",
+            el,
+            &format!(
+                "<{}> has an onclick handler but is not keyboard-accessible (no role or tabindex)",
+                tag
+            ),
+        ));
+    });
 }
 
 // ─── Media ───
@@ -486,14 +657,12 @@ fn check_media(document: &Html, issues: &mut Vec<A11yIssue>) {
         if let Some(sel) = select(document, tag) {
             for el in document.select(&sel) {
                 // Check descendant <track kind="captions">
-                let has_track = el
-                    .select(&Selector::parse("track").unwrap())
-                    .any(|t| {
-                        t.value()
-                            .attr("kind")
-                            .map(|k| k == "captions" || k == "subtitles")
-                            .unwrap_or(false)
-                    });
+                let has_track = el.select(&Selector::parse("track").unwrap()).any(|t| {
+                    t.value()
+                        .attr("kind")
+                        .map(|k| k == "captions" || k == "subtitles")
+                        .unwrap_or(false)
+                });
                 if !has_track {
                     issues.push(issue(
                         "missing-captions",
@@ -506,6 +675,19 @@ fn check_media(document: &Html, issues: &mut Vec<A11yIssue>) {
             }
         }
     }
+
+    each(document, "marquee,blink", |el| {
+        issues.push(issue(
+            "marquee-blink",
+            "moderate",
+            "2.2.2",
+            el,
+            &format!(
+                "<{}> creates moving/blinking content users cannot pause",
+                el.value().name()
+            ),
+        ));
+    });
 
     each(document, "iframe", |iframe| {
         let titled = iframe
@@ -618,6 +800,55 @@ fn check_forms(document: &Html, issues: &mut Vec<A11yIssue>) {
                         &format!("{} has no associated label", element_desc),
                     ));
                 }
+            }
+        }
+    }
+
+    // Inputs that collect user data should declare autocomplete tokens (WCAG 1.3.5)
+    if let Ok(sel) = Selector::parse("input[type='email'],input[type='tel'],input[type='url']") {
+        for el in document.select(&sel) {
+            if el.value().attr("autocomplete").is_none() {
+                let t = el.value().attr("type").unwrap_or("");
+                issues.push(issue(
+                    "missing-autocomplete",
+                    "minor",
+                    "1.3.5",
+                    &el,
+                    &format!("input[type={}] is missing an autocomplete attribute", t),
+                ));
+            }
+        }
+    }
+
+    // Radio groups should be wrapped in fieldset/legend
+    if let Ok(sel) = Selector::parse("input[type='radio'][name]") {
+        let radios: Vec<ElementRef> = document.select(&sel).collect();
+        let mut groups: HashMap<&str, Vec<&ElementRef>> = HashMap::new();
+        for r in &radios {
+            if let Some(name) = r.value().attr("name") {
+                groups.entry(name).or_default().push(r);
+            }
+        }
+        for (name, members) in groups {
+            if members.len() < 2 {
+                continue;
+            }
+            let has_fieldset = members.iter().any(|m| {
+                m.ancestors()
+                    .filter_map(ElementRef::wrap)
+                    .any(|a| a.value().name() == "fieldset")
+            });
+            if !has_fieldset {
+                issues.push(issue(
+                    "radio-no-legend",
+                    "minor",
+                    "1.3.1",
+                    members[0],
+                    &format!(
+                        "Radio group \"{}\" is not grouped in a <fieldset> with <legend>",
+                        name
+                    ),
+                ));
             }
         }
     }
@@ -777,5 +1008,51 @@ mod tests {
         let issues = run_a11y_scan(html, &cfg);
         assert!(!types(&issues).contains(&"missing-alt"));
     }
-}
 
+    #[test]
+    fn phase_e_new_rules() {
+        let html = r##"<html lang="en"><head><title>t</title><meta http-equiv="refresh" content="0;url=/x"></head><body>
+            <a href="#"><button>nested</button></a>
+            <a href="https://x.com" target="_blank">ext</a>
+            <div onclick="go()">clicky</div>
+            <div aria-hidden="true"><a href="/h">hidden link</a></div>
+            <div aria-controls="missing">ctrl</div>
+            <input type="email">
+            <fieldset></fieldset>
+            <input type="radio" name="r" value="1"><input type="radio" name="r" value="2">
+            <marquee>move</marquee>
+        </body></html>"##;
+        let issues = run_a11y_scan(html, &config());
+        let t = types(&issues);
+        for expected in [
+            "meta-refresh",
+            "nested-interactive",
+            "target-blank-noopener",
+            "onclick-noninteractive",
+            "aria-hidden-focusable",
+            "broken-aria-ref",
+            "missing-autocomplete",
+            "radio-no-legend",
+            "marquee-blink",
+        ] {
+            assert!(t.contains(&expected), "missing {} in {:?}", expected, t);
+        }
+        // email input with no label should also flag missing-label
+        assert!(t.contains(&"missing-label"));
+        // standards metadata populated
+        assert!(issues
+            .iter()
+            .all(|i| i.standards.contains(&"wcag".to_string())));
+    }
+
+    #[test]
+    fn aria_hidden_clean_case() {
+        // aria-hidden on non-focusable decorative content is fine
+        let html = r#"<html lang="en"><head><title>t</title></head><body><div aria-hidden="true"><span>decor</span></div></body></html>"#;
+        let issues = run_a11y_scan(html, &config());
+        assert!(!types(&issues).contains(&"aria-hidden-focusable"));
+        // dangling aria-controls on non-hidden element still flagged via broken-aria-ref
+        let html2 = r#"<html lang="en"><head><title>t</title></head><body><div aria-controls="nope"></div></body></html>"#;
+        assert!(types(&run_a11y_scan(html2, &config())).contains(&"broken-aria-ref"));
+    }
+}
