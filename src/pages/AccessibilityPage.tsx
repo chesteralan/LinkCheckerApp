@@ -424,8 +424,8 @@ export function AccessibilityPage() {
               ))}
             </div>
             <p className="text-[10px] text-muted-foreground mt-1">
-              WCAG levels are cumulative; EN 301 549 maps to WCAG 2.1 checks. Best practices only
-              apply to the axe-core engine.
+              WCAG levels are cumulative; axe adds native EN 301 549 and Section 508 tags.
+              Best practices only apply to the axe-core engine.
             </p>
           </div>
           <div className="flex gap-2">

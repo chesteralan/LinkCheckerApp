@@ -104,8 +104,15 @@ fn axe_tags_for_standards(standards: &[String]) -> Vec<String> {
                 push("wcag2a", &mut tags);
                 push("wcag2aa", &mut tags);
             }
-            "wcag21" | "en301549" => {
+            "wcag21" => {
                 for t in ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] {
+                    push(t, &mut tags);
+                }
+            }
+            "en301549" => {
+                // EN 301 549 ≈ WCAG 2.1 AA; axe also tags rules natively with
+                // EN-301-549, so include that tag for full coverage
+                for t in ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "EN-301-549"] {
                     push(t, &mut tags);
                 }
             }
@@ -331,6 +338,7 @@ pub async fn run_axe_audit(
                 status: "running".into(),
                 results: results.clone(),
                 summary: compute_browser_summary(&results),
+                standards: audit.a11y_config.standards.clone(),
             };
             if let Some(state) = app.try_state::<AppState>() {
                 let _ = state.storage.save_a11y_report(&partial);
@@ -364,6 +372,7 @@ pub async fn run_axe_audit(
         status,
         results,
         summary,
+        standards: audit.a11y_config.standards.clone(),
     };
 
     let _ = app.emit("a11y:complete", &report);
@@ -470,9 +479,10 @@ mod tests {
         assert!(t.contains(&"section508".to_string()));
         assert!(t.contains(&"best-practice".to_string()));
 
-        // EN 301 549 approximated by WCAG 2.1 tags
+        // EN 301 549 → WCAG 2.1 tags plus axe's native EN-301-549 tag
         let t = axe_tags_for_standards(&["en301549".into()]);
         assert!(t.contains(&"wcag21aa".to_string()));
+        assert!(t.contains(&"EN-301-549".to_string()));
         assert!(!t.contains(&"wcag22aa".to_string()));
     }
 

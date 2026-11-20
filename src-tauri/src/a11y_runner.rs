@@ -54,6 +54,7 @@ impl A11yRunner {
                         status: "error".into(),
                         results: Vec::new(),
                         summary: A11ySummary::default(),
+                        standards: audit.a11y_config.standards.clone(),
                     };
                 }
             }
@@ -108,6 +109,7 @@ impl A11yRunner {
             .map(|u| apply_a11y_url_postfix(&u, &audit.url_postfix))
             .collect();
         let a11y_config = audit.a11y_config.clone();
+        let standards = a11y_config.standards.clone();
 
         let mut fetches = Vec::new();
         for url in urls {
@@ -121,6 +123,7 @@ impl A11yRunner {
             let audit_id = audit.id.clone();
             let started_at = started_at.clone();
             let a11y_config = a11y_config.clone();
+            let standards = standards.clone();
 
             fetches.push(tokio::spawn(async move {
                 let _permit = permit;
@@ -147,6 +150,7 @@ impl A11yRunner {
                     status: "running".into(),
                     results: results.clone(),
                     summary: compute_a11y_summary(&results),
+                    standards: standards.clone(),
                 };
                 if let Some(state) = app.try_state::<AppState>() {
                     let _ = state.storage.save_a11y_report(&partial);
@@ -183,6 +187,7 @@ impl A11yRunner {
             status,
             results,
             summary,
+            standards,
         };
 
         let _ = app.emit("a11y:complete", &report);

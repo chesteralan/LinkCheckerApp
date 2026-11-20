@@ -232,6 +232,8 @@ pub struct A11yReport {
     pub status: String,
     pub results: Vec<A11yPageResult>,
     pub summary: A11ySummary,
+    #[serde(default)]
+    pub standards: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

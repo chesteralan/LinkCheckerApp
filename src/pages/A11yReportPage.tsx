@@ -8,6 +8,7 @@ import { A11yIssuesList, A11ySeverityBadge } from '@/components/A11yIssuesList'
 import { Modal } from '@/components/Modal'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { reportScore, scoreColor } from '@/utils/a11yScore'
+import { standardsLabel } from '@/utils/a11yStandards'
 import { a11yReportToHtml } from '@/lib/a11yReportHtml'
 import type { A11yReport, A11yIssue, A11yReportInfo } from '@/types'
 
@@ -163,6 +164,9 @@ export function A11yReportPage() {
         <span>
           {new Date(report.startedAt).toLocaleString()} · {s.totalPages} page{s.totalPages !== 1 ? 's' : ''}
           {report.completedAt && ` · finished ${new Date(report.completedAt).toLocaleTimeString()}`}
+        </span>
+        <span className="text-xs bg-muted px-2 py-0.5 rounded" title="Standards this report was audited against">
+          {standardsLabel(report.standards)}
         </span>
         {score != null && (
           <span className={`text-lg font-bold ${scoreColor(score)}`} title="100 minus severity-weighted issue penalties, averaged across scanned pages">

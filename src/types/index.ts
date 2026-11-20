@@ -161,6 +161,7 @@ export interface A11yReport {
   status: string
   results: A11yPageResult[]
   summary: A11ySummary
+  standards?: string[]
 }
 
 export interface A11yReportInfo {

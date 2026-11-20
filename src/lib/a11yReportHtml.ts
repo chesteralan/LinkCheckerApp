@@ -1,5 +1,6 @@
 import type { A11yReport, A11yIssue } from '@/types'
 import { reportScore } from '@/utils/a11yScore'
+import { standardsLabel } from '@/utils/a11yStandards'
 
 function esc(v: unknown): string {
   return String(v ?? '')
@@ -87,7 +88,7 @@ export function a11yReportToHtml(report: A11yReport, auditName: string): string 
 <h1>Accessibility Report — ${esc(auditName || report.auditId)}</h1>
 <p class="meta">
   ${esc(report.startedAt)}${report.completedAt ? ` → ${esc(report.completedAt)}` : ''} ·
-  Status: ${esc(report.status)} · Engine report ${esc(report.id.slice(0, 8))}
+  Status: ${esc(report.status)} · Standards: ${esc(standardsLabel(report.standards))} · Report ${esc(report.id.slice(0, 8))}
 </p>
 
 <div class="cards">

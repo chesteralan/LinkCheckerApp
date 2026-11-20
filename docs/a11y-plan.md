@@ -238,7 +238,7 @@ self-contained HTML report export.
 
 ---
 
-## Phase E — Standards coverage & rule gaps (planned)
+## Phase E — Standards coverage & rule gaps (implemented)
 
 ### Standards landscape
 
@@ -271,11 +271,14 @@ Second batch shipped: landmark coverage (`missing-navigation`,
 `tabindex="-1"` on focusable elements, `input[type=image]`/`area`
 alt text, media `autoplay` without controls, `<abbr>` expansion,
 and a **standards picker** on `A11yCheckConfig`/`A11yAudit` (WCAG
-2.0/2.1/2.2 cumulative, Section 508 ≈ WCAG 2.0, EN 301 549 ≈ WCAG
-2.1, best-practice). Static engine filters issues by criterion→version
-mapping; axe engine maps selections to `runOnly` tags (`section508`,
-`best-practice`; EN 301 549 approximated by WCAG 2.1 tags since axe
-has no dedicated tag).
+2.0/2.1/2.2 cumulative, Section 508, EN 301 549, best-practice).
+Static engine filters issues by criterion→version mapping (Section
+508 ≈ WCAG 2.0, EN 301 549 ≈ WCAG 2.1); axe engine maps selections
+to `runOnly` tags including native `section508` and `EN-301-549`
+tags. Reports persist the selected standards for self-describing
+exports. Note: axe 4.14's WCAG 2.2 coverage is limited to
+`target-size` (2.5.8) — focus appearance, dragging, and accessible
+authentication have no axe rules yet.
 
 Third batch shipped: `aria-live` invalid values, `aria-label` on
 generic elements, `role=presentation/none` on focusable content,
@@ -284,18 +287,18 @@ duplicating implicit semantics, empty headings, tables with data
 cells but no `<th>`, `fieldset` without `legend`, invalid `lang`
 tags, and duplicate unnamed navigation landmarks.
 
-Still missing (next batch):
+Deferred / out of scope:
 
-- ARIA: remaining edge cases (e.g. `aria-owns` restructuring is
-  largely browser-detectable only)
-- Interactive: drag-only interactions (needs browser), focus-visible
-  (needs CSS analysis — browser engine)
-- WCAG 2.2: target size 2.5.8, focus appearance 2.4.11/13, dragging
-  2.5.7, consistent help 3.2.6, redundant entry 3.3.7, accessible
-  authentication 3.3.8 — mostly browser-engine territory
-- Content: images-of-text heuristic, reading-level proxies
-- Standards: per-standard report sections/labels (ADA, RGAA, BITV,
-  Stanca are report labeling only — underlying checks identical)
+- WCAG 2.2 browser-only criteria (focus appearance 2.4.11/13,
+  dragging 2.5.7, consistent help 3.2.6, redundant entry 3.3.7,
+  accessible authentication 3.3.8) — no axe rules exist; would need
+  custom browser checks (computed styles, interaction simulation)
+- Content heuristics (images-of-text, reading-level proxies) —
+  fuzzy, likely noisy
+- National-standard report labels (ADA, RGAA, BITV, Stanca) —
+  cosmetic only; underlying checks are identical to WCAG
+- axe `target-size` (2.5.8) ships in axe 4.14 but is disabled by
+  default upstream — could be enabled via axe configure if wanted
 
 ---
 
