@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { checkLinks } from '@/lib/tauri'
 import { LinkScanResults } from '@/components/LinkScanResults'
 import type { LinkCheckResult } from '@/types'
+
+interface CheckingItem {
+  url: string
+  depth: number
+  sourceUrl: string
+}
 
 export function LinkCheckerPage() {
   const navigate = useNavigate()
@@ -13,6 +20,8 @@ export function LinkCheckerPage() {
   const [running, setRunning] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [results, setResults] = useState<LinkCheckResult[]>([])
+  const [checking, setChecking] = useState<CheckingItem[]>([])
+  const [queued, setQueued] = useState<CheckingItem[]>([])
 
   useEffect(() => {
     if (!running) return
@@ -25,6 +34,29 @@ export function LinkCheckerPage() {
     if (!url.trim()) return
     setRunning(true)
     setResults([])
+    setChecking([])
+    setQueued([])
+
+    const unlisteners: UnlistenFn[] = []
+    unlisteners.push(
+      await listen<LinkCheckResult>('linkcheck:result', (e) => {
+        const r = e.payload
+        setResults((prev) => (prev.some((p) => p.url === r.url && p.depth === r.depth) ? prev : [...prev, r]))
+        setChecking((prev) => prev.filter((c) => c.url !== r.url))
+      }),
+    )
+    unlisteners.push(
+      await listen<CheckingItem>('linkcheck:checking', (e) => {
+        setQueued((prev) => prev.filter((c) => c.url !== e.payload.url))
+        setChecking((prev) => (prev.some((c) => c.url === e.payload.url) ? prev : [...prev, e.payload]))
+      }),
+    )
+    unlisteners.push(
+      await listen<CheckingItem>('linkcheck:discovered', (e) => {
+        setQueued((prev) => (prev.some((c) => c.url === e.payload.url) ? prev : [...prev, e.payload]))
+      }),
+    )
+
     try {
       const res = await checkLinks(url.trim(), {
         maxDepth,
@@ -36,6 +68,9 @@ export function LinkCheckerPage() {
     } catch (e) {
       console.error(e)
     } finally {
+      unlisteners.forEach((u) => u())
+      setChecking([])
+      setQueued([])
       setRunning(false)
     }
   }
@@ -107,9 +142,43 @@ export function LinkCheckerPage() {
       </div>
 
       {running && (
-        <div className="border border-border rounded-lg p-4 flex items-center gap-3 text-sm text-muted-foreground">
-          <span className="inline-block w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-          Crawling links{includeAccessibility ? ' with accessibility scans' : ''} — this can take a while on large sites (up to 500 pages checked).
+        <div className="border border-border rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <span className="inline-block w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+            Crawling links{includeAccessibility ? ' with accessibility scans' : ''} — {results.length} checked
+            {checking.length > 0 && `, ${checking.length} in flight`}
+            {queued.length > 0 && `, ${queued.length} queued`} ({elapsed}s)
+          </div>
+          {checking.length > 0 && (
+            <div className="max-h-40 overflow-y-auto space-y-1">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Checking now</div>
+              {checking.slice(0, 50).map((c) => (
+                <div key={c.url} className="flex items-center gap-2 text-xs font-mono">
+                  <span className="inline-block w-2 h-2 rounded-full bg-primary/60 animate-pulse shrink-0" />
+                  <span className="truncate text-muted-foreground">{c.url}</span>
+                  <span className="text-muted-foreground/60 shrink-0">d{c.depth}</span>
+                </div>
+              ))}
+              {checking.length > 50 && (
+                <div className="text-xs text-muted-foreground">…and {checking.length - 50} more</div>
+              )}
+            </div>
+          )}
+          {queued.length > 0 && (
+            <div className="max-h-40 overflow-y-auto space-y-1">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Found, queued</div>
+              {queued.slice(0, 50).map((c) => (
+                <div key={c.url} className="flex items-center gap-2 text-xs font-mono">
+                  <span className="inline-block w-2 h-2 rounded-full bg-muted-foreground/40 shrink-0" />
+                  <span className="truncate text-muted-foreground/70">{c.url}</span>
+                  <span className="text-muted-foreground/50 shrink-0">d{c.depth}</span>
+                </div>
+              ))}
+              {queued.length > 50 && (
+                <div className="text-xs text-muted-foreground">…and {queued.length - 50} more</div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { save } from '@tauri-apps/plugin-dialog'
-import { writeFile } from '@/lib/tauri'
+import { writeFile, createTargetList } from '@/lib/tauri'
 import { A11yIssuesList } from '@/components/A11yIssuesList'
 import { Modal } from '@/components/Modal'
 import type { LinkCheckResult } from '@/types'
@@ -20,6 +20,10 @@ export function LinkScanResults({
   exportName?: string
 }) {
   const [a11yModal, setA11yModal] = useState<LinkCheckResult | null>(null)
+  const [showTargetListModal, setShowTargetListModal] = useState(false)
+  const [targetListName, setTargetListName] = useState('')
+  const [addingToList, setAddingToList] = useState(false)
+  const [addResult, setAddResult] = useState<string | null>(null)
 
   async function handleExport(format: 'json' | 'csv') {
     const path = await save({
@@ -44,6 +48,35 @@ export function LinkScanResults({
   const passed = results.filter((r) => r.status != null && r.status < 400 && !r.error)
   const broken = results.filter((r) => r.status != null && r.status >= 400)
   const errored = results.filter((r) => r.error)
+  const goodUrls = [...new Set(passed.map((r) => r.url))]
+
+  function openTargetListModal() {
+    const seed = results[0]?.url ?? ''
+    let host = seed
+    try {
+      host = new URL(seed).hostname
+    } catch {
+      // keep raw
+    }
+    setTargetListName(`Link check — ${host} — ${new Date().toLocaleDateString()}`)
+    setAddResult(null)
+    setShowTargetListModal(true)
+  }
+
+  async function handleAddToTargetList() {
+    const name = targetListName.trim()
+    if (!name || goodUrls.length === 0) return
+    setAddingToList(true)
+    try {
+      await createTargetList({ name, urls: goodUrls })
+      setAddResult(`Added ${goodUrls.length} URL${goodUrls.length !== 1 ? 's' : ''} to "${name}"`)
+      setTimeout(() => setShowTargetListModal(false), 1200)
+    } catch (e) {
+      setAddResult(`Failed: ${String(e)}`)
+    } finally {
+      setAddingToList(false)
+    }
+  }
   const totalA11y = results.reduce((n, r) => n + (r.a11yIssues?.length ?? 0), 0)
   const a11yCol = showA11yColumn || totalA11y > 0
 
@@ -62,6 +95,14 @@ export function LinkScanResults({
           </span>
         )}
         <span className="flex-1" />
+        {goodUrls.length > 0 && (
+          <button
+            onClick={openTargetListModal}
+            className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors"
+          >
+            Add to Target Lists
+          </button>
+        )}
         <button
           onClick={() => handleExport('json')}
           className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors"
@@ -147,6 +188,45 @@ export function LinkScanResults({
         title={`Accessibility issues — ${a11yModal?.url ?? ''}`}
       >
         {a11yModal && <A11yIssuesList issues={a11yModal.a11yIssues ?? []} maxHeight="60vh" />}
+      </Modal>
+
+      <Modal
+        open={showTargetListModal}
+        onClose={() => setShowTargetListModal(false)}
+        title="Add to Target Lists"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Create a new target list with <span className="font-medium text-foreground">{goodUrls.length}</span> working
+            link{goodUrls.length !== 1 ? 's' : ''} (broken and errored links excluded).
+          </p>
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">List name</label>
+            <input
+              type="text"
+              value={targetListName}
+              onChange={(e) => setTargetListName(e.target.value)}
+              className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              autoFocus
+            />
+          </div>
+          {addResult && <p className="text-sm text-muted-foreground">{addResult}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={handleAddToTargetList}
+              disabled={addingToList || !targetListName.trim()}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {addingToList ? 'Adding...' : 'Create List'}
+            </button>
+            <button
+              onClick={() => setShowTargetListModal(false)}
+              className="px-4 py-2 border border-border rounded-md text-sm hover:bg-muted transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       </Modal>
     </>
   )

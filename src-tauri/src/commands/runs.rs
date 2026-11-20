@@ -2,7 +2,7 @@ use std::collections::{HashMap, BTreeSet, HashSet};
 use std::fs;
 use std::sync::Arc;
 use serde::Deserialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Semaphore;
 
 use crate::models::*;
@@ -466,6 +466,7 @@ fn origin_matches(seed: &Option<reqwest::Url>, url: &str) -> bool {
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn check_links(
+    app: AppHandle,
     url: String,
     options: CheckLinksOptions,
     state: State<'_, AppState>,
@@ -489,7 +490,7 @@ pub async fn check_links(
     // Seed page — always GET so the body can feed link extraction and a11y
     let seed_fetch = get_page(&client, &url).await;
     let seed_html = seed_fetch.html.clone();
-    results.lock().unwrap().push(LinkCheckResult {
+    let seed_result = LinkCheckResult {
         url: url.clone(),
         source_url: url.clone(),
         status: seed_fetch.status,
@@ -497,7 +498,9 @@ pub async fn check_links(
         error: seed_fetch.error,
         depth: 0,
         a11y_issues: if include_a11y { scan_a11y(seed_html.as_deref()) } else { Vec::new() },
-    });
+    };
+    let _ = app.emit("linkcheck:result", &seed_result);
+    results.lock().unwrap().push(seed_result);
 
     if max_depth > 0 {
     // Level-order crawl: each level fetches its frontier (GET when the
@@ -514,6 +517,13 @@ pub async fn check_links(
         .map(|l| (l, url.clone()))
         .collect();
     frontier.sort();
+    for (l, s) in &frontier {
+        let _ = app.emit("linkcheck:discovered", serde_json::json!({
+            "url": l,
+            "depth": 1,
+            "sourceUrl": s,
+        }));
+    }
 
     for depth in 1..=max_depth {
         if frontier.is_empty() {
@@ -528,6 +538,7 @@ pub async fn check_links(
             }
 
             let client = client.clone();
+            let app = app.clone();
             let results = results.clone();
             let sem = semaphore.clone();
             let visited = visited.clone();
@@ -542,6 +553,11 @@ pub async fn check_links(
             checked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             handles.push(tokio::spawn(async move {
                 let _permit = permit;
+                let _ = app.emit("linkcheck:checking", serde_json::json!({
+                    "url": link.clone(),
+                    "depth": depth,
+                    "sourceUrl": source.clone(),
+                }));
                 let fetch = if need_body {
                     get_page(&client, &link).await
                 } else {
@@ -553,7 +569,7 @@ pub async fn check_links(
                 } else {
                     Vec::new()
                 };
-                results.lock().unwrap().push(LinkCheckResult {
+                let result_entry = LinkCheckResult {
                     url: link.clone(),
                     source_url: source,
                     status: fetch.status,
@@ -561,7 +577,9 @@ pub async fn check_links(
                     error: fetch.error,
                     depth,
                     a11y_issues,
-                });
+                };
+                let _ = app.emit("linkcheck:result", &result_entry);
+                results.lock().unwrap().push(result_entry);
 
                 if !can_expand || !ok {
                     return;
@@ -580,6 +598,11 @@ pub async fn check_links(
                         continue;
                     }
                     if visited.lock().unwrap().insert(sub.clone()) {
+                        let _ = app.emit("linkcheck:discovered", serde_json::json!({
+                            "url": sub,
+                            "depth": depth + 1,
+                            "sourceUrl": link,
+                        }));
                         next.push((sub, link.clone()));
                     }
                 }
