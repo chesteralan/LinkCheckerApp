@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getA11yReport, listA11yAudits } from '@/lib/tauri'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { A11yIssuesList, A11ySeverityBadge } from '@/components/A11yIssuesList'
+import { A11yIssuesList } from '@/components/A11yIssuesList'
 import { reportScore, pageScore, scoreColor } from '@/utils/a11yScore'
 import type { A11yReport, A11yIssue } from '@/types'
 

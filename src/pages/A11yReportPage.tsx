@@ -80,6 +80,7 @@ export function A11yReportPage() {
   const score = reportScore(report)
 
   async function handleExportHtml() {
+    if (!report) return
     const path = await save({
       defaultPath: `a11y-report-${auditName || reportId}.html`,
       filters: [{ name: 'HTML', extensions: ['html'] }],
@@ -89,6 +90,7 @@ export function A11yReportPage() {
   }
 
   async function handleExport(format: 'json' | 'csv') {
+    if (!report) return
     const ext = format
     const path = await save({
       defaultPath: `a11y-report-${reportId}.${ext}`,
