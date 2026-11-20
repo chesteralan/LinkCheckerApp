@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { save } from '@tauri-apps/plugin-dialog'
-import { writeFile, createTargetList } from '@/lib/tauri'
+import { writeFile } from '@/lib/tauri'
+import { useStore } from '@/hooks/useStore'
 import { A11yIssuesList } from '@/components/A11yIssuesList'
 import { Modal } from '@/components/Modal'
 import type { LinkCheckResult } from '@/types'
@@ -20,6 +21,7 @@ export function LinkScanResults({
   exportName?: string
 }) {
   const [a11yModal, setA11yModal] = useState<LinkCheckResult | null>(null)
+  const { createTargetList } = useStore()
   const [showTargetListModal, setShowTargetListModal] = useState(false)
   const [targetListName, setTargetListName] = useState('')
   const [addingToList, setAddingToList] = useState(false)
@@ -68,7 +70,7 @@ export function LinkScanResults({
     if (!name || goodUrls.length === 0) return
     setAddingToList(true)
     try {
-      await createTargetList({ name, urls: goodUrls })
+      await createTargetList(name, goodUrls)
       setAddResult(`Added ${goodUrls.length} URL${goodUrls.length !== 1 ? 's' : ''} to "${name}"`)
       setTimeout(() => setShowTargetListModal(false), 1200)
     } catch (e) {

@@ -4,7 +4,6 @@ import { open, save } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
-import { ConfirmDialog } from '@/components/ConfirmDialog'
 import type { TargetList } from '@/types'
 import { normalizeUrl, readFile, scrapeLinks, writeFile } from '@/lib/tauri'
 import { resolveUrl } from '@/utils/resolveUrl'
@@ -24,7 +23,6 @@ export function TargetListsPage() {
   const [scrapeUrl, setScrapeUrl] = useState('')
   const [scraping, setScraping] = useState(false)
   const [auditModalList, setAuditModalList] = useState<TargetList | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<TargetList | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [folderFilter, setFolderFilter] = useState('')
 
@@ -70,12 +68,6 @@ export function TargetListsPage() {
       await createTargetList(name, urls, folderName || undefined)
     }
     resetForm()
-  }
-
-  async function handleDeleteConfirm() {
-    if (!confirmDelete) return
-    await deleteTargetList(confirmDelete.id)
-    setConfirmDelete(null)
   }
 
   useHotkeys(
@@ -299,7 +291,7 @@ export function TargetListsPage() {
         <p className="text-muted-foreground text-sm">No target lists yet. Create one to get started.</p>
       )}
 
-      <div className="space-y-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {[...targetLists]
           .filter((l) => !folderFilter || l.folder === folderFilter)
           .sort((a, b) => Number(b.pinned) - Number(a.pinned))
@@ -354,12 +346,6 @@ export function TargetListsPage() {
               >
                 Edit
               </button>
-              <button
-                onClick={() => setConfirmDelete(list)}
-                className="px-3 py-1.5 text-sm border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
-              >
-                Delete
-              </button>
             </div>
           </div>
         ))}
@@ -405,12 +391,6 @@ export function TargetListsPage() {
           })()}
       </Modal>
 
-      <ConfirmDialog
-        open={!!confirmDelete}
-        message={`Delete target list "${confirmDelete?.name ?? ''}"? This action cannot be undone.`}
-        onConfirm={handleDeleteConfirm}
-        onCancel={() => setConfirmDelete(null)}
-      />
     </div>
   )
 }
