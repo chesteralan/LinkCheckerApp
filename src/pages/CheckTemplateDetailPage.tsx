@@ -26,6 +26,15 @@ const A11Y_CATEGORIES: { value: string; label: string }[] = [
   { value: 'forms', label: 'Forms' },
 ]
 
+const A11Y_STANDARDS: { value: string; label: string }[] = [
+  { value: 'wcag20', label: 'WCAG 2.0' },
+  { value: 'wcag21', label: 'WCAG 2.1' },
+  { value: 'wcag22', label: 'WCAG 2.2' },
+  { value: 'section508', label: 'Section 508' },
+  { value: 'en301549', label: 'EN 301 549' },
+  { value: 'bestpractice', label: 'Best practices' },
+]
+
 const A11Y_SEVERITIES: { value: A11yCheckConfig['minSeverity']; label: string }[] = [
   { value: 'minor', label: 'All issues' },
   { value: 'moderate', label: 'Moderate and above' },
@@ -338,6 +347,31 @@ export function CheckTemplateDetailPage() {
                               }}
                             />
                             {cat.label}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">
+                      Standards (none selected = all)
+                    </label>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                      {A11Y_STANDARDS.map((std) => {
+                        const stds = check.a11yConfig?.standards ?? []
+                        return (
+                          <label key={std.value} className="flex items-center gap-1.5 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={stds.includes(std.value)}
+                              onChange={(e) => {
+                                const selected = e.target.checked
+                                  ? [...stds, std.value]
+                                  : stds.filter((s) => s !== std.value)
+                                updateA11yConfig(index, { standards: selected })
+                              }}
+                            />
+                            {std.label}
                           </label>
                         )
                       })}

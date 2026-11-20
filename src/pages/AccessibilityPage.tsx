@@ -21,6 +21,15 @@ const A11Y_CATEGORIES: { value: string; label: string }[] = [
   { value: 'forms', label: 'Forms' },
 ]
 
+const A11Y_STANDARDS: { value: string; label: string }[] = [
+  { value: 'wcag20', label: 'WCAG 2.0' },
+  { value: 'wcag21', label: 'WCAG 2.1' },
+  { value: 'wcag22', label: 'WCAG 2.2' },
+  { value: 'section508', label: 'Section 508' },
+  { value: 'en301549', label: 'EN 301 549' },
+  { value: 'bestpractice', label: 'Best practices' },
+]
+
 const SEVERITY_OPTIONS: { value: A11yCheckConfig['minSeverity']; label: string }[] = [
   { value: 'minor', label: 'All issues' },
   { value: 'moderate', label: 'Moderate and above' },
@@ -35,6 +44,7 @@ interface FormState {
   engine: string
   minSeverity: A11yCheckConfig['minSeverity']
   categories: string[]
+  standards: string[]
   mode: 'sequential' | 'batch'
   batchSize: number
   timeoutSecs: number
@@ -47,6 +57,7 @@ const EMPTY_FORM: FormState = {
   engine: 'static',
   minSeverity: 'minor',
   categories: [],
+  standards: [],
   mode: 'batch',
   batchSize: 5,
   timeoutSecs: 10,
@@ -110,7 +121,11 @@ export function AccessibilityPage() {
 
   async function handleSave() {
     if (!form.name.trim() || !form.targetListId) return
-    const a11yConfig: A11yCheckConfig = { minSeverity: form.minSeverity, categories: form.categories }
+    const a11yConfig: A11yCheckConfig = {
+      minSeverity: form.minSeverity,
+      categories: form.categories,
+      standards: form.standards,
+    }
     const config = { mode: form.mode, batchSize: form.batchSize, timeoutSecs: form.timeoutSecs, headers: {}, cookies: [] }
     if (form.id) {
       await updateA11yAudit({
@@ -143,6 +158,7 @@ export function AccessibilityPage() {
       engine: audit.engine || 'static',
       minSeverity: audit.a11yConfig?.minSeverity ?? 'minor',
       categories: audit.a11yConfig?.categories ?? [],
+      standards: audit.a11yConfig?.standards ?? [],
       mode: (audit.config.mode as 'sequential' | 'batch') ?? 'batch',
       batchSize: audit.config.batchSize,
       timeoutSecs: audit.config.timeoutSecs,
@@ -385,6 +401,32 @@ export function AccessibilityPage() {
                 </label>
               ))}
             </div>
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">
+              Standards (none selected = all WCAG + best practices)
+            </label>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {A11Y_STANDARDS.map((std) => (
+                <label key={std.value} className="flex items-center gap-1.5 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={form.standards.includes(std.value)}
+                    onChange={(e) => {
+                      const selected = e.target.checked
+                        ? [...form.standards, std.value]
+                        : form.standards.filter((s) => s !== std.value)
+                      setForm({ ...form, standards: selected })
+                    }}
+                  />
+                  {std.label}
+                </label>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              WCAG levels are cumulative; EN 301 549 maps to WCAG 2.1 checks. Best practices only
+              apply to the axe-core engine.
+            </p>
           </div>
           <div className="flex gap-2">
             <button

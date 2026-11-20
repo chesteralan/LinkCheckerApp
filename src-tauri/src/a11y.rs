@@ -116,7 +116,55 @@ pub fn run_a11y_scan(html: &str, config: &A11yCheckConfig) -> Vec<A11yIssue> {
     }
 
     issues.retain(|i| severity_rank(&i.severity) >= severity_rank(&config.min_severity));
+
+    if !config.standards.is_empty() {
+        let mut allowed: HashSet<u8> = HashSet::new();
+        for s in &config.standards {
+            for v in standard_wcag_versions(s) {
+                allowed.insert(*v);
+            }
+        }
+        let include_non_wcag = config.standards.iter().any(|s| s == "bestpractice");
+        issues.retain(|i| {
+            if i.wcag.is_empty() {
+                return include_non_wcag;
+            }
+            allowed.contains(&wcag_criterion_version(&i.wcag))
+        });
+    }
+
     issues
+}
+
+// WCAG version a criterion belongs to: 0 = 2.0, 1 = 2.1, 2 = 2.2
+fn wcag_criterion_version(criterion: &str) -> u8 {
+    const V21: &[&str] = &[
+        "1.3.4", "1.3.5", "1.3.6", "1.4.10", "1.4.11", "1.4.12", "1.4.13", "2.1.1", "2.1.2",
+        "2.1.3", "2.1.4", "2.5.1", "2.5.2", "2.5.3", "2.5.4", "2.5.5", "4.1.3",
+    ];
+    const V22: &[&str] = &[
+        "2.4.11", "2.4.12", "2.4.13", "2.5.7", "2.5.8", "3.2.6", "3.3.7", "3.3.8", "3.3.9",
+    ];
+    if V22.contains(&criterion) {
+        2
+    } else if V21.contains(&criterion) {
+        1
+    } else {
+        0
+    }
+}
+
+// WCAG versions each selectable standard is aligned with (conformance is
+// cumulative, so wcag22 covers 2.0+2.1+2.2). Section 508 ≈ WCAG 2.0,
+// EN 301 549 ≈ WCAG 2.1 AA.
+fn standard_wcag_versions(std: &str) -> &'static [u8] {
+    match std {
+        "wcag20" => &[0],
+        "wcag21" | "en301549" => &[0, 1],
+        "wcag22" => &[0, 1, 2],
+        "section508" => &[0],
+        _ => &[],
+    }
 }
 
 // ─── Severity ───
@@ -286,6 +334,24 @@ fn check_document(document: &Html, issues: &mut Vec<A11yIssue>) {
             "Page uses a meta refresh redirect which users cannot control",
         ));
     });
+
+    // <abbr> should expand via title (WCAG 3.1.4)
+    each(document, "abbr", |el| {
+        if el
+            .value()
+            .attr("title")
+            .map(|t| t.trim().is_empty())
+            .unwrap_or(true)
+        {
+            issues.push(issue(
+                "abbr-no-title",
+                "minor",
+                "3.1.4",
+                el,
+                "<abbr> has no title attribute expanding the abbreviation",
+            ));
+        }
+    });
 }
 
 // ─── Headings ───
@@ -379,6 +445,34 @@ fn check_landmarks(document: &Html, issues: &mut Vec<A11yIssue>) {
             "body",
             "body",
             "Page has no skip-navigation link",
+        ));
+    }
+
+    let has_nav = select(document, "nav,[role='navigation']")
+        .map(|sel| document.select(&sel).next().is_some())
+        .unwrap_or(false);
+    if !has_nav {
+        issues.push(issue_raw(
+            "missing-navigation",
+            "minor",
+            "1.3.1",
+            "body",
+            "body",
+            "Page has no navigation landmark",
+        ));
+    }
+
+    let has_contentinfo = select(document, "footer,[role='contentinfo']")
+        .map(|sel| document.select(&sel).next().is_some())
+        .unwrap_or(false);
+    if !has_contentinfo {
+        issues.push(issue_raw(
+            "missing-contentinfo",
+            "minor",
+            "1.3.1",
+            "body",
+            "body",
+            "Page has no contentinfo (footer) landmark",
         ));
     }
 
@@ -479,6 +573,20 @@ fn check_aria(document: &Html, issues: &mut Vec<A11yIssue>) {
             }
         }
     }
+
+    // aria-expanded should be paired with aria-controls pointing at the
+    // expanded region (heuristic — some valid patterns omit it)
+    each(document, "[aria-expanded]", |el| {
+        if el.value().attr("aria-controls").is_none() {
+            issues.push(issue(
+                "aria-expanded-no-controls",
+                "minor",
+                "4.1.2",
+                el,
+                "aria-expanded is set without aria-controls referencing the controlled region",
+            ));
+        }
+    });
 }
 
 fn is_focusable(el: &ElementRef) -> bool {
@@ -648,6 +756,46 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
             ),
         ));
     });
+
+    // tabindex="-1" removes naturally focusable elements from tab order
+    each(document, "[tabindex='-1']", |el| {
+        let tag = el.value().name();
+        let naturally_focusable = match tag {
+            "button" | "select" | "textarea" => true,
+            "a" => el.value().attr("href").is_some(),
+            "input" => el
+                .value()
+                .attr("type")
+                .map(|t| t != "hidden")
+                .unwrap_or(true),
+            _ => false,
+        };
+        if naturally_focusable {
+            issues.push(issue(
+                "tabindex-neg-focusable",
+                "moderate",
+                "2.1.1",
+                el,
+                &format!(
+                    "<{}> is naturally focusable but tabindex=\"-1\" removes it from tab order",
+                    tag
+                ),
+            ));
+        }
+    });
+
+    // input[type=image] and area[href] are images and need alt text
+    each(document, "input[type='image'],area[href]", |el| {
+        if el.value().attr("alt").is_none() {
+            issues.push(issue(
+                "missing-alt",
+                "critical",
+                "1.1.1",
+                el,
+                &format!("<{}> is missing alt text", el.value().name()),
+            ));
+        }
+    });
 }
 
 // ─── Media ───
@@ -687,6 +835,22 @@ fn check_media(document: &Html, issues: &mut Vec<A11yIssue>) {
                 el.value().name()
             ),
         ));
+    });
+
+    // Autoplaying media without controls can't be paused by the user (WCAG 2.2.2)
+    each(document, "video[autoplay],audio[autoplay]", |el| {
+        if el.value().attr("controls").is_none() {
+            issues.push(issue(
+                "media-autoplay-no-controls",
+                "moderate",
+                "2.2.2",
+                el,
+                &format!(
+                    "<{} autoplay> has no controls attribute — users cannot pause it",
+                    el.value().name()
+                ),
+            ));
+        }
     });
 
     each(document, "iframe", |iframe| {
@@ -897,7 +1061,7 @@ mod tests {
 
     #[test]
     fn clean_page_has_no_issues() {
-        let html = r##"<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>T</title><meta name="viewport" content="width=device-width"></head><body><a href="#main" class="skip">Skip to content</a><main><h1>Hi</h1><h2>Sub</h2><img src="a.png" alt="A"><p>text</p></main></body></html>"##;
+        let html = r##"<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>T</title><meta name="viewport" content="width=device-width"></head><body><a href="#main" class="skip">Skip to content</a><nav><a href="/n">N</a></nav><main><h1>Hi</h1><h2>Sub</h2><img src="a.png" alt="A"><p>text</p></main><footer>f</footer></body></html>"##;
         let issues = run_a11y_scan(html, &config());
         // missing-skip-link won't fire (skip link exists); expect only maybe none
         assert!(issues.is_empty(), "unexpected issues: {:?}", types(&issues));
@@ -1054,5 +1218,64 @@ mod tests {
         // dangling aria-controls on non-hidden element still flagged via broken-aria-ref
         let html2 = r#"<html lang="en"><head><title>t</title></head><body><div aria-controls="nope"></div></body></html>"#;
         assert!(types(&run_a11y_scan(html2, &config())).contains(&"broken-aria-ref"));
+    }
+
+    #[test]
+    fn phase_e_batch2_rules() {
+        let html = r##"<html lang="en"><head><title>t</title></head><body>
+            <button aria-expanded="true">exp</button>
+            <a href="/x" tabindex="-1">removed from tab order</a>
+            <input type="image" src="btn.png">
+            <map name="m"><area href="/a"></map>
+            <abbr>WCAG</abbr>
+            <video autoplay src="v.mp4"></video>
+        </body></html>"##;
+        let issues = run_a11y_scan(html, &config());
+        let t = types(&issues);
+        for expected in [
+            "aria-expanded-no-controls",
+            "tabindex-neg-focusable",
+            "missing-alt", // input[type=image] + area[href]
+            "abbr-no-title",
+            "media-autoplay-no-controls",
+            "missing-captions", // video has no track
+            "missing-navigation",
+            "missing-contentinfo",
+        ] {
+            assert!(t.contains(&expected), "missing {} in {:?}", expected, t);
+        }
+        // input[type=image]/area missing-alt are critical
+        assert!(
+            issues
+                .iter()
+                .filter(|i| i.issue_type == "missing-alt" && i.severity == "critical")
+                .count()
+                >= 2
+        );
+    }
+
+    #[test]
+    fn standards_filter() {
+        let html = r##"<html lang="en"><head><title>t</title><meta http-equiv="refresh" content="0;url=/x"></head><body><abbr>HTML</abbr><input type="email"></body></html>"##;
+        // meta-refresh=2.2.1 & abbr-no-title=3.1.4 are WCAG 2.0 criteria;
+        // missing-autocomplete=1.3.5 is WCAG 2.1
+        let mut cfg = config();
+        cfg.standards = vec!["section508".into()]; // WCAG 2.0 only
+        let issues = run_a11y_scan(html, &cfg);
+        let t = types(&issues);
+        assert!(t.contains(&"abbr-no-title"));
+        assert!(t.contains(&"meta-refresh"));
+        assert!(!t.contains(&"missing-autocomplete"));
+
+        cfg.standards = vec!["wcag21".into()];
+        let issues = run_a11y_scan(html, &cfg);
+        let t = types(&issues);
+        assert!(t.contains(&"meta-refresh"));
+        assert!(t.contains(&"missing-autocomplete"));
+        assert!(t.contains(&"abbr-no-title"));
+
+        // bestpractice only -> static engine emits no non-WCAG issues
+        cfg.standards = vec!["bestpractice".into()];
+        assert!(run_a11y_scan(html, &cfg).is_empty());
     }
 }

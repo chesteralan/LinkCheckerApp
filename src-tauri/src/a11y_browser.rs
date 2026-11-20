@@ -77,6 +77,57 @@ fn find_browser_executable() -> Option<PathBuf> {
     None
 }
 
+// Map selected standards to axe runOnly tag values. WCAG levels are
+// cumulative (2.2 conformance includes 2.0/2.1). EN 301 549 has no dedicated
+// axe tag — it's approximated by WCAG 2.1 tags. Empty selection = all.
+fn axe_tags_for_standards(standards: &[String]) -> Vec<String> {
+    if standards.is_empty() {
+        return vec![
+            "wcag2a".into(),
+            "wcag2aa".into(),
+            "wcag21a".into(),
+            "wcag21aa".into(),
+            "wcag22a".into(),
+            "wcag22aa".into(),
+            "best-practice".into(),
+        ];
+    }
+    let mut tags: Vec<String> = Vec::new();
+    let push = |t: &str, tags: &mut Vec<String>| {
+        if !tags.iter().any(|x| x == t) {
+            tags.push(t.into());
+        }
+    };
+    for s in standards {
+        match s.as_str() {
+            "wcag20" => {
+                push("wcag2a", &mut tags);
+                push("wcag2aa", &mut tags);
+            }
+            "wcag21" | "en301549" => {
+                for t in ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] {
+                    push(t, &mut tags);
+                }
+            }
+            "wcag22" => {
+                for t in [
+                    "wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa",
+                ] {
+                    push(t, &mut tags);
+                }
+            }
+            "section508" => {
+                for t in ["section508", "wcag2a", "wcag2aa"] {
+                    push(t, &mut tags);
+                }
+            }
+            "bestpractice" => push("best-practice", &mut tags),
+            _ => {}
+        }
+    }
+    tags
+}
+
 fn wcag_from_tags(tags: &[String]) -> String {
     for tag in tags {
         if let Some(digits) = tag.strip_prefix("wcag") {
@@ -340,10 +391,15 @@ async fn scan_page_with_browser(
             .await
             .map_err(|e| format!("inject axe: {}", e))?;
 
+        let tags = axe_tags_for_standards(&config.standards);
+        let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into());
+        let run_expr = format!(
+            "axe.run({{ runOnly: {{ type: 'tag', values: {} }}, resultTypes: ['violations'] }}).then(r => JSON.stringify(r.violations))",
+            tags_json
+        );
+
         let violations_json: String = page
-            .evaluate(
-                r#"axe.run({ runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa', 'best-practice'] }, resultTypes: ['violations'] }).then(r => JSON.stringify(r.violations))"#,
-            )
+            .evaluate(run_expr)
             .await
             .map_err(|e| format!("axe.run: {}", e))?
             .into_value()
@@ -392,6 +448,33 @@ fn severity_rank(s: &str) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn axe_tags_for_standards_mapping() {
+        // Empty = all tags
+        assert!(axe_tags_for_standards(&[]).contains(&"wcag22aa".to_string()));
+        assert!(axe_tags_for_standards(&[]).contains(&"best-practice".to_string()));
+
+        // WCAG 2.2 is cumulative
+        let t = axe_tags_for_standards(&["wcag22".into()]);
+        for expected in [
+            "wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa",
+        ] {
+            assert!(t.contains(&expected.to_string()), "missing {}", expected);
+        }
+        assert!(!t.contains(&"best-practice".to_string()));
+        assert!(!t.contains(&"section508".to_string()));
+
+        // Section 508 + best practices
+        let t = axe_tags_for_standards(&["section508".into(), "bestpractice".into()]);
+        assert!(t.contains(&"section508".to_string()));
+        assert!(t.contains(&"best-practice".to_string()));
+
+        // EN 301 549 approximated by WCAG 2.1 tags
+        let t = axe_tags_for_standards(&["en301549".into()]);
+        assert!(t.contains(&"wcag21aa".to_string()));
+        assert!(!t.contains(&"wcag22aa".to_string()));
+    }
 
     #[tokio::test]
     #[ignore]

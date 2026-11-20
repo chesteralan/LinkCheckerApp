@@ -49,6 +49,8 @@ pub struct A11yCheckConfig {
     pub min_severity: String,
     #[serde(default)]
     pub categories: Vec<String>,
+    #[serde(default)]
+    pub standards: Vec<String>,
 }
 
 impl Default for A11yCheckConfig {
@@ -56,6 +58,7 @@ impl Default for A11yCheckConfig {
         Self {
             min_severity: default_a11y_min_severity(),
             categories: Vec::new(),
+            standards: Vec::new(),
         }
     }
 }

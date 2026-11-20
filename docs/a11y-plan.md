@@ -266,23 +266,29 @@ dangling `aria-controls`/`aria-owns`, `missing-autocomplete`,
 `marquee`/`blink`, `meta-refresh`, `target-blank-noopener`,
 `onclick-noninteractive`, `radio-no-legend`.
 
+Second batch shipped: landmark coverage (`missing-navigation`,
+`missing-contentinfo`), `aria-expanded`/`aria-controls` pairing,
+`tabindex="-1"` on focusable elements, `input[type=image]`/`area`
+alt text, media `autoplay` without controls, `<abbr>` expansion,
+and a **standards picker** on `A11yCheckConfig`/`A11yAudit` (WCAG
+2.0/2.1/2.2 cumulative, Section 508 ≈ WCAG 2.0, EN 301 549 ≈ WCAG
+2.1, best-practice). Static engine filters issues by criterion→version
+mapping; axe engine maps selections to `runOnly` tags (`section508`,
+`best-practice`; EN 301 549 approximated by WCAG 2.1 tags since axe
+has no dedicated tag).
+
 Still missing (next batch):
 
-- Landmarks: `banner`/`contentinfo`/`nav`/`search`/`form` coverage,
-  implicit-vs-explicit role conflicts
-- ARIA: `aria-expanded`/`aria-controls` pairing, live-region misuse,
-  `role` on native elements that already carry the semantics
-- Interactive: `tabindex="-1"` on naturally focusable elements,
-  drag-only interactions (needs browser), focus-visible (needs CSS
-  analysis — browser engine)
+- ARIA: live-region misuse, `role` on native elements that already
+  carry the semantics, duplicate/unique landmarks
+- Interactive: drag-only interactions (needs browser), focus-visible
+  (needs CSS analysis — browser engine)
 - WCAG 2.2: target size 2.5.8, focus appearance 2.4.11/13, dragging
   2.5.7, consistent help 3.2.6, redundant entry 3.3.7, accessible
   authentication 3.3.8 — mostly browser-engine territory
-- Content: `<abbr>` without expansion, images-of-text heuristic,
-  reading-level proxies
-- Standards picker on `A11yAudit`: filter by WCAG 2.1 AA / 2.2 AA /
-  Section 508 / EN 301 549 (mostly a config + reporting layer since
-  underlying checks overlap)
+- Content: images-of-text heuristic, reading-level proxies
+- Standards: per-standard report sections/labels (ADA, RGAA, BITV,
+  Stanca are report labeling only — underlying checks identical)
 
 ---
 

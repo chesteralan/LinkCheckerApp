@@ -25,6 +25,7 @@ export interface SelectorCheck {
 export interface A11yCheckConfig {
   minSeverity: 'critical' | 'serious' | 'moderate' | 'minor'
   categories: string[]
+  standards?: string[]
 }
 
 export interface CheckTemplate {
