@@ -277,10 +277,17 @@ mapping; axe engine maps selections to `runOnly` tags (`section508`,
 `best-practice`; EN 301 549 approximated by WCAG 2.1 tags since axe
 has no dedicated tag).
 
+Third batch shipped: `aria-live` invalid values, `aria-label` on
+generic elements, `role=presentation/none` on focusable content,
+interactive widget roles without `tabindex`, redundant roles
+duplicating implicit semantics, empty headings, tables with data
+cells but no `<th>`, `fieldset` without `legend`, invalid `lang`
+tags, and duplicate unnamed navigation landmarks.
+
 Still missing (next batch):
 
-- ARIA: live-region misuse, `role` on native elements that already
-  carry the semantics, duplicate/unique landmarks
+- ARIA: remaining edge cases (e.g. `aria-owns` restructuring is
+  largely browser-detectable only)
 - Interactive: drag-only interactions (needs browser), focus-visible
   (needs CSS analysis — browser engine)
 - WCAG 2.2: target size 2.5.8, focus appearance 2.4.11/13, dragging

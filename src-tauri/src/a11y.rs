@@ -352,6 +352,25 @@ fn check_document(document: &Html, issues: &mut Vec<A11yIssue>) {
             ));
         }
     });
+
+    // html lang should be a valid BCP 47-ish tag
+    if let Some(html_el) = document.select(&Selector::parse("html").unwrap()).next() {
+        if let Some(lang) = html_el.value().attr("lang") {
+            let valid = lang.len() >= 2
+                && lang.split('-').all(|part| {
+                    !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric())
+                });
+            if !valid {
+                issues.push(issue(
+                    "invalid-lang",
+                    "minor",
+                    "3.1.1",
+                    &html_el,
+                    &format!("lang=\"{}\" is not a valid language tag", lang),
+                ));
+            }
+        }
+    }
 }
 
 // ─── Headings ───
@@ -398,6 +417,15 @@ fn check_headings(document: &Html, issues: &mut Vec<A11yIssue>) {
     let mut reported_skip = false;
     for h in &headings {
         let level: u8 = h.value().name()[1..].parse().unwrap_or(0);
+        if h.text().collect::<String>().trim().is_empty() {
+            issues.push(issue(
+                "empty-heading",
+                "minor",
+                "1.3.1",
+                h,
+                &format!("<h{}> has no text content", level),
+            ));
+        }
         if prev_level > 0 && level > prev_level + 1 && !reported_skip {
             issues.push(issue(
                 "heading-skip",
@@ -474,6 +502,31 @@ fn check_landmarks(document: &Html, issues: &mut Vec<A11yIssue>) {
             "body",
             "Page has no contentinfo (footer) landmark",
         ));
+    }
+
+    // Multiple nav landmarks should be distinguishable by accessible name
+    if let Ok(sel) = Selector::parse("nav,[role='navigation']") {
+        let navs: Vec<ElementRef> = document.select(&sel).collect();
+        if navs.len() > 1 {
+            for nav in &navs {
+                let named = nav.value().attr("aria-label").is_some()
+                    || nav.value().attr("aria-labelledby").is_some()
+                    || nav
+                        .value()
+                        .attr("title")
+                        .map(|t| !t.trim().is_empty())
+                        .unwrap_or(false);
+                if !named {
+                    issues.push(issue(
+                        "unnamed-duplicate-landmark",
+                        "moderate",
+                        "1.3.1",
+                        nav,
+                        "Multiple navigation landmarks exist but this one has no accessible name",
+                    ));
+                }
+            }
+        }
     }
 
     let mut id_counts: HashMap<&str, usize> = HashMap::new();
@@ -587,6 +640,73 @@ fn check_aria(document: &Html, issues: &mut Vec<A11yIssue>) {
             ));
         }
     });
+
+    // aria-live must be a valid token
+    each(document, "[aria-live]", |el| {
+        let valid = el
+            .value()
+            .attr("aria-live")
+            .map(|v| matches!(v.trim(), "off" | "polite" | "assertive"))
+            .unwrap_or(false);
+        if !valid {
+            issues.push(issue(
+                "aria-live-invalid",
+                "moderate",
+                "4.1.2",
+                el,
+                &format!(
+                    "aria-live=\"{}\" is not a valid value (off|polite|assertive)",
+                    el.value().attr("aria-live").unwrap_or("")
+                ),
+            ));
+        }
+    });
+
+    // aria-label on generic elements (no role) is ignored by AT
+    each(document, "[aria-label]", |el| {
+        if el.value().attr("role").is_some() {
+            return;
+        }
+        if matches!(
+            el.value().name(),
+            "div" | "span" | "p" | "ul" | "ol" | "li" | "td" | "tr" | "table" | "br" | "section"
+        ) {
+            issues.push(issue(
+                "aria-label-generic",
+                "minor",
+                "4.1.2",
+                el,
+                &format!(
+                    "aria-label on <{}> without a role is ignored by assistive technology",
+                    el.value().name()
+                ),
+            ));
+        }
+    });
+
+    // role="presentation"/"none" must not hide focusable content (same rule
+    // as aria-hidden)
+    if let Ok(sel) = Selector::parse("[role='presentation'],[role='none']") {
+        let focusable_desc = Selector::parse(
+            "a[href],button,input:not([type='hidden']),select,textarea,[tabindex]:not([tabindex='-1']),[contenteditable]",
+        )
+        .ok();
+        for el in document.select(&sel) {
+            let descendant_focusable = focusable_desc
+                .as_ref()
+                .map(|s| el.select(s).next().is_some())
+                .unwrap_or(false);
+            if is_focusable(&el) || descendant_focusable {
+                issues.push(issue(
+                    "presentation-focusable",
+                    "serious",
+                    "4.1.2",
+                    &el,
+                    "role=\"presentation\"/\"none\" element contains or is focusable content",
+                ));
+            }
+        }
+    }
 }
 
 fn is_focusable(el: &ElementRef) -> bool {
@@ -796,6 +916,68 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
             ));
         }
     });
+
+    // Elements given interactive widget roles must be keyboard reachable —
+    // a div with role="button" but no tabindex can't be tabbed to
+    if let Ok(sel) = Selector::parse(
+        "[role='button'],[role='link'],[role='tab'],[role='menuitem'],[role='menuitemcheckbox'],[role='menuitemradio'],[role='checkbox'],[role='switch'],[role='radio'],[role='option'],[role='slider'],[role='spinbutton'],[role='textbox'],[role='combobox'],[role='listbox'],[role='searchbox'],[role='treeitem']",
+    ) {
+        for el in document.select(&sel) {
+            let tag = el.value().name();
+            if matches!(tag, "a" | "button" | "input" | "select" | "textarea") {
+                continue;
+            }
+            if el.value().attr("tabindex").is_none() {
+                issues.push(issue(
+                    "widget-no-tabindex",
+                    "moderate",
+                    "2.1.1",
+                    &el,
+                    &format!(
+                        "<{} role=\"{}\"> has no tabindex — not reachable by keyboard",
+                        tag,
+                        el.value().attr("role").unwrap_or("")
+                    ),
+                ));
+            }
+        }
+    }
+
+    // role duplicating the element's implicit semantics is redundant
+    each(document, "[role]", |el| {
+        let Some(role) = el.value().attr("role") else {
+            return;
+        };
+        let first = role.split_whitespace().next().unwrap_or("");
+        let tag = el.value().name();
+        let redundant = match (tag, first) {
+            ("nav", "navigation")
+            | ("main", "main")
+            | ("header", "banner")
+            | ("footer", "contentinfo")
+            | ("aside", "complementary")
+            | ("button", "button")
+            | ("table", "table")
+            | ("ul" | "ol", "list")
+            | ("li", "listitem")
+            | ("img", "img") => true,
+            ("a", "link") => el.value().attr("href").is_some(),
+            ("form", "form") => true,
+            _ => false,
+        };
+        if redundant {
+            issues.push(issue(
+                "redundant-role",
+                "minor",
+                "4.1.2",
+                el,
+                &format!(
+                    "role=\"{}\" duplicates the implicit semantics of <{}>",
+                    first, tag
+                ),
+            ));
+        }
+    });
 }
 
 // ─── Media ───
@@ -885,6 +1067,19 @@ fn check_tables(document: &Html, issues: &mut Vec<A11yIssue>) {
             .next()
             .is_some();
         if !has_th {
+            let has_td = table
+                .select(&Selector::parse("td").unwrap())
+                .next()
+                .is_some();
+            if has_td {
+                issues.push(issue(
+                    "table-no-headers",
+                    "moderate",
+                    "1.3.1",
+                    table,
+                    "<table> contains data cells but no <th> header cells",
+                ));
+            }
             return;
         }
         for th in table.select(&Selector::parse("th").unwrap()) {
@@ -907,6 +1102,23 @@ fn check_tables(document: &Html, issues: &mut Vec<A11yIssue>) {
 // ─── Forms ───
 
 fn check_forms(document: &Html, issues: &mut Vec<A11yIssue>) {
+    // fieldset should have a legend naming the group
+    each(document, "fieldset", |fs| {
+        let has_legend = fs
+            .select(&Selector::parse("legend").unwrap())
+            .next()
+            .is_some();
+        if !has_legend {
+            issues.push(issue(
+                "fieldset-no-legend",
+                "moderate",
+                "1.3.1",
+                fs,
+                "<fieldset> has no <legend> describing the group",
+            ));
+        }
+    });
+
     let mut labelled_ids: HashSet<String> = HashSet::new();
     each(document, "label[for]", |label| {
         if let Some(for_id) = label.value().attr("for") {
@@ -1277,5 +1489,43 @@ mod tests {
         // bestpractice only -> static engine emits no non-WCAG issues
         cfg.standards = vec!["bestpractice".into()];
         assert!(run_a11y_scan(html, &cfg).is_empty());
+    }
+
+    #[test]
+    fn phase_e_batch3_rules() {
+        let html = r##"<html lang="english!!"><head><title>t</title></head><body>
+            <h2></h2>
+            <div role="button">not keyboard reachable</div>
+            <nav><a href="/a">A</a></nav><nav><a href="/b">B</a></nav>
+            <div aria-live="shout">live</div>
+            <span aria-label="ignored">x</span>
+            <table><tr><td>1</td></tr></table>
+            <fieldset><input type="checkbox"></fieldset>
+            <nav role="navigation"><a href="/c">C</a></nav>
+        </body></html>"##;
+        let issues = run_a11y_scan(html, &config());
+        let t = types(&issues);
+        for expected in [
+            "invalid-lang",
+            "empty-heading",
+            "widget-no-tabindex",
+            "unnamed-duplicate-landmark",
+            "aria-live-invalid",
+            "aria-label-generic",
+            "table-no-headers",
+            "fieldset-no-legend",
+            "redundant-role",
+        ] {
+            assert!(t.contains(&expected), "missing {} in {:?}", expected, t);
+        }
+    }
+
+    #[test]
+    fn presentation_focusable() {
+        let html = r#"<html lang="en"><head><title>t</title></head><body><div role="none"><a href="/x">link</a></div></body></html>"#;
+        assert!(types(&run_a11y_scan(html, &config())).contains(&"presentation-focusable"));
+        // non-focusable presentation is fine
+        let html2 = r#"<html lang="en"><head><title>t</title></head><body><div role="presentation"><span>decor</span></div></body></html>"#;
+        assert!(!types(&run_a11y_scan(html2, &config())).contains(&"presentation-focusable"));
     }
 }
