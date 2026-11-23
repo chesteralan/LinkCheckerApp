@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getA11yReport, listA11yAudits, listA11yReports, writeFile, deleteA11yReport } from '@/lib/tauri'
+import { getA11yReport, listA11yAudits, listA11yReports, writeFile, deleteA11yReport, rerunA11yPages } from '@/lib/tauri'
 import { save } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
@@ -26,6 +26,9 @@ export function A11yReportPage() {
   const [trend, setTrend] = useState<{ date: string; score: number }[]>([])
   const [siblingReports, setSiblingReports] = useState<A11yReportInfo[]>([])
   const [showCompare, setShowCompare] = useState(false)
+  const [rerunning, setRerunning] = useState(false)
+  const [retryingUrl, setRetryingUrl] = useState<string | null>(null)
+  const [rerunError, setRerunError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!reportId) return
@@ -115,6 +118,23 @@ export function A11yReportPage() {
     await writeFile(path, content)
   }
 
+  const erroredCount = report.results.filter((r) => r.error).length
+
+  async function handleRerun(urls?: string[]) {
+    if (!reportId || rerunning) return
+    setRerunning(true)
+    setRerunError(null)
+    try {
+      const updated = await rerunA11yPages(reportId, urls)
+      setReport(updated)
+    } catch (e) {
+      setRerunError(String(e))
+    } finally {
+      setRerunning(false)
+      setRetryingUrl(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -125,6 +145,17 @@ export function A11yReportPage() {
           <h2 className="text-2xl font-bold">{auditName || 'Accessibility Report'}</h2>
         </div>
         <div className="flex items-center gap-2">
+          {erroredCount > 0 && (
+            <button
+              onClick={() => handleRerun()}
+              disabled={rerunning}
+              className="text-xs px-3 py-1 border border-primary text-primary rounded-md hover:bg-primary/10 transition-colors disabled:opacity-50"
+              title="Re-scan pages that failed with an error"
+            >
+              {rerunning ? 'Re-running…' : `Re-run failed (${erroredCount})`}
+            </button>
+          )}
+          {rerunError && <span className="text-xs text-destructive">{rerunError}</span>}
           {siblingReports.length > 0 && (
             <button
               onClick={() => setShowCompare(true)}
@@ -309,7 +340,22 @@ export function A11yReportPage() {
                   <span>{expanded === r.url ? '▲' : '▼'}</span>
                 </div>
               </div>
-              {r.error && <p className="text-xs text-destructive">{r.error}</p>}
+              {r.error && (
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-destructive">{r.error}</p>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setRetryingUrl(r.url)
+                      handleRerun([r.url])
+                    }}
+                    disabled={rerunning}
+                    className="text-xs px-2 py-0.5 border border-border rounded hover:bg-muted transition-colors disabled:opacity-50"
+                  >
+                    {retryingUrl === r.url && rerunning ? 'Retrying…' : 'Retry'}
+                  </button>
+                </div>
+              )}
               {r.pageTitle && <p className="text-xs text-muted-foreground">{r.pageTitle}</p>}
               {expanded === r.url && r.issues.length > 0 && (
                 <A11yIssuesList issues={r.issues} maxHeight="320px" />

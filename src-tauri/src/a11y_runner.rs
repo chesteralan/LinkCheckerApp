@@ -69,36 +69,7 @@ impl A11yRunner {
             _ => Arc::new(Semaphore::new(audit.config.batch_size as usize)),
         };
 
-        let mut client_builder = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(audit.config.timeout_secs))
-            .redirect(reqwest::redirect::Policy::limited(10));
-        if !audit.config.headers.is_empty() {
-            let mut headers = reqwest::header::HeaderMap::new();
-            for (key, value) in &audit.config.headers {
-                if let (Ok(k), Ok(v)) = (
-                    reqwest::header::HeaderName::from_bytes(key.as_bytes()),
-                    reqwest::header::HeaderValue::from_str(value),
-                ) {
-                    headers.insert(k, v);
-                }
-            }
-            client_builder = client_builder.default_headers(headers);
-        }
-        if !audit.config.cookies.is_empty() {
-            let cookie_str: String = audit
-                .config
-                .cookies
-                .iter()
-                .map(|kv| format!("{}={}", kv.key, kv.value))
-                .collect::<Vec<_>>()
-                .join("; ");
-            if let Ok(v) = reqwest::header::HeaderValue::from_str(&cookie_str) {
-                client_builder = client_builder.default_headers(
-                    reqwest::header::HeaderMap::from_iter([(reqwest::header::COOKIE, v)]),
-                );
-            }
-        }
-        let client = client_builder.build().expect("failed to build HTTP client");
+        let client = build_a11y_client(&audit);
 
         let results = Arc::new(std::sync::Mutex::new(Vec::with_capacity(total)));
         let checked = Arc::new(std::sync::Mutex::new(0usize));
@@ -294,7 +265,74 @@ pub(crate) fn apply_a11y_origin_override(url: &str, origin_override: &Option<Str
     url.to_string()
 }
 
-fn compute_a11y_summary(results: &[A11yPageResult]) -> A11ySummary {
+pub(crate) fn build_a11y_client(audit: &A11yAudit) -> reqwest::Client {
+    let mut client_builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(audit.config.timeout_secs))
+        .redirect(reqwest::redirect::Policy::limited(10));
+    if !audit.config.headers.is_empty() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        for (key, value) in &audit.config.headers {
+            if let (Ok(k), Ok(v)) = (
+                reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                reqwest::header::HeaderValue::from_str(value),
+            ) {
+                headers.insert(k, v);
+            }
+        }
+        client_builder = client_builder.default_headers(headers);
+    }
+    if !audit.config.cookies.is_empty() {
+        let cookie_str: String = audit
+            .config
+            .cookies
+            .iter()
+            .map(|kv| format!("{}={}", kv.key, kv.value))
+            .collect::<Vec<_>>()
+            .join("; ");
+        if let Ok(v) = reqwest::header::HeaderValue::from_str(&cookie_str) {
+            client_builder = client_builder.default_headers(reqwest::header::HeaderMap::from_iter(
+                [(reqwest::header::COOKIE, v)],
+            ));
+        }
+    }
+    client_builder.build().expect("failed to build HTTP client")
+}
+
+/// Re-scan a subset of URLs with the static engine (used by report re-run).
+/// URLs are expected to be final (already origin/postfix-transformed) URLs
+/// as stored on report results.
+pub async fn scan_urls_static(
+    app: &AppHandle,
+    audit: &A11yAudit,
+    urls: Vec<String>,
+    cancel_flag: Arc<AtomicBool>,
+) -> Vec<A11yPageResult> {
+    let client = build_a11y_client(audit);
+    let a11y_config = audit.a11y_config.clone();
+    let total = urls.len();
+    let mut out = Vec::with_capacity(total);
+    for (i, url) in urls.into_iter().enumerate() {
+        if cancel_flag.load(Ordering::SeqCst) {
+            break;
+        }
+        let page_result = scan_url(
+            client.clone(),
+            url,
+            a11y_config.clone(),
+            cancel_flag.clone(),
+        )
+        .await;
+        let _ = app.emit(
+            "a11y:progress",
+            serde_json::json!({ "checked": i + 1, "total": total }),
+        );
+        let _ = app.emit("a11y:result", &page_result);
+        out.push(page_result);
+    }
+    out
+}
+
+pub(crate) fn compute_a11y_summary(results: &[A11yPageResult]) -> A11ySummary {
     let mut summary = A11ySummary {
         total_pages: results.len(),
         ..Default::default()

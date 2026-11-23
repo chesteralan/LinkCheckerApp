@@ -168,3 +168,111 @@ pub fn get_a11y_report(
 pub fn delete_a11y_report(state: State<'_, AppState>, report_id: String) -> Result<(), String> {
     state.storage.delete_a11y_report(&report_id)
 }
+
+/// Re-scan pages that errored in a report (or an explicit URL subset) and
+/// merge the fresh results back into the stored report.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn rerun_a11y_pages(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    report_id: String,
+    urls: Option<Vec<String>>,
+) -> Result<A11yReport, String> {
+    let (audit, mut report) = {
+        let data = state.data.lock().map_err(|e| e.to_string())?;
+        let report = state.storage.load_a11y_report(&report_id)?;
+        let audit = data
+            .a11y_audits
+            .iter()
+            .find(|a| a.id == report.audit_id)
+            .ok_or_else(|| "Accessibility audit not found".to_string())?
+            .clone();
+        (audit, report)
+    };
+
+    let targets: Vec<String> = match urls {
+        Some(u) if !u.is_empty() => u,
+        _ => report
+            .results
+            .iter()
+            .filter(|r| r.error.is_some())
+            .map(|r| r.url.clone())
+            .collect(),
+    };
+    if targets.is_empty() {
+        return Ok(report);
+    }
+
+    state.a11y_runner.reset();
+    let cancel = state.a11y_runner.cancel_flag();
+    let new_results = if audit.engine == "axe-core" {
+        crate::a11y_browser::scan_urls_axe(&app, &audit, targets, cancel).await?
+    } else {
+        crate::a11y_runner::scan_urls_static(&app, &audit, targets, cancel).await
+    };
+
+    merge_rerun_results(&mut report.results, new_results);
+    report.summary = if audit.engine == "axe-core" {
+        crate::a11y_browser::compute_browser_summary(&report.results)
+    } else {
+        crate::a11y_runner::compute_a11y_summary(&report.results)
+    };
+    report.completed_at = Some(Utc::now().to_rfc3339());
+
+    state.storage.save_a11y_report(&report)?;
+    Ok(report)
+}
+
+fn merge_rerun_results(
+    results: &mut Vec<crate::models::A11yPageResult>,
+    new: Vec<crate::models::A11yPageResult>,
+) {
+    for r in new {
+        if let Some(existing) = results.iter_mut().find(|e| e.url == r.url) {
+            *existing = r;
+        } else {
+            results.push(r);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::A11yPageResult;
+
+    fn page(url: &str, error: Option<&str>) -> A11yPageResult {
+        A11yPageResult {
+            url: url.into(),
+            page_title: None,
+            status: None,
+            status_text: if error.is_some() {
+                "error".into()
+            } else {
+                "OK".into()
+            },
+            response_time_ms: None,
+            error: error.map(|e| e.into()),
+            issues: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn merge_replaces_by_url() {
+        let mut results = vec![
+            page("https://a.com", Some("timeout")),
+            page("https://b.com", None),
+        ];
+        merge_rerun_results(&mut results, vec![page("https://a.com", None)]);
+        assert_eq!(results.len(), 2);
+        assert!(results[0].error.is_none());
+        assert!(results[1].error.is_none());
+    }
+
+    #[test]
+    fn merge_appends_unknown_urls() {
+        let mut results = vec![page("https://a.com", Some("x"))];
+        merge_rerun_results(&mut results, vec![page("https://c.com", None)]);
+        assert_eq!(results.len(), 2);
+    }
+}

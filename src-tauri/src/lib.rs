@@ -98,6 +98,7 @@ pub fn run() {
             commands::a11y::list_a11y_reports,
             commands::a11y::get_a11y_report,
             commands::a11y::delete_a11y_report,
+            commands::a11y::rerun_a11y_pages,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

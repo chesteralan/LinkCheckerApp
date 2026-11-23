@@ -241,6 +241,85 @@ fn violations_to_issues(violations: &[AxeViolation]) -> Vec<A11yIssue> {
     issues
 }
 
+/// Re-scan a subset of URLs with the axe engine (used by report re-run).
+/// URLs are expected to be final URLs as stored on report results.
+pub async fn scan_urls_axe(
+    app: &AppHandle,
+    audit: &A11yAudit,
+    urls: Vec<String>,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<Vec<A11yPageResult>, String> {
+    let exe = find_browser_executable().ok_or_else(|| {
+        "No Chromium-based browser found. Install Chrome/Chromium or set A11Y_CHROME_PATH."
+            .to_string()
+    })?;
+
+    let user_data_dir =
+        std::env::temp_dir().join(format!("a11y-profile-rerun-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&user_data_dir).ok();
+
+    let config = BrowserConfig::builder()
+        .chrome_executable(&exe)
+        .new_headless_mode()
+        .user_data_dir(&user_data_dir)
+        .hide()
+        .build()
+        .map_err(|e| format!("browser config: {}", e))?;
+
+    let (mut browser, mut handler) = Browser::launch(config)
+        .await
+        .map_err(|e| format!("failed to launch browser: {}", e))?;
+    tokio::spawn(async move { while handler.next().await.is_some() {} });
+
+    let total = urls.len();
+    let a11y_config = audit.a11y_config.clone();
+    let page_timeout = Duration::from_secs(audit.config.timeout_secs.max(15));
+    let mut out = Vec::with_capacity(total);
+
+    for (i, url) in urls.into_iter().enumerate() {
+        if cancel_flag.load(Ordering::SeqCst) {
+            break;
+        }
+        let page_result = match tokio::time::timeout(
+            page_timeout,
+            scan_page_with_browser(&browser, &url, &a11y_config),
+        )
+        .await
+        {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => A11yPageResult {
+                url,
+                page_title: None,
+                status: None,
+                status_text: "error".into(),
+                response_time_ms: None,
+                error: Some(e),
+                issues: Vec::new(),
+            },
+            Err(_) => A11yPageResult {
+                url,
+                page_title: None,
+                status: None,
+                status_text: "error".into(),
+                response_time_ms: None,
+                error: Some(format!("page timed out after {}s", page_timeout.as_secs())),
+                issues: Vec::new(),
+            },
+        };
+        let _ = app.emit(
+            "a11y:progress",
+            serde_json::json!({ "checked": i + 1, "total": total }),
+        );
+        let _ = app.emit("a11y:result", &page_result);
+        out.push(page_result);
+    }
+
+    let _ = browser.close().await;
+    let _ = browser.wait().await;
+    std::fs::remove_dir_all(&user_data_dir).ok();
+    Ok(out)
+}
+
 pub async fn run_axe_audit(
     app: &AppHandle,
     audit: &A11yAudit,
@@ -523,7 +602,7 @@ mod tests {
     }
 }
 
-fn compute_browser_summary(results: &[A11yPageResult]) -> A11ySummary {
+pub(crate) fn compute_browser_summary(results: &[A11yPageResult]) -> A11ySummary {
     let mut summary = A11ySummary {
         total_pages: results.len(),
         ..Default::default()

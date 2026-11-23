@@ -133,3 +133,5 @@ export const cancelA11yRun = () => invoke<void>('cancel_a11y_run')
 export const listA11yReports = () => invoke<A11yReportInfo[]>('list_a11y_reports')
 export const getA11yReport = (reportId: string) => invoke<A11yReport>('get_a11y_report', { reportId })
 export const deleteA11yReport = (reportId: string) => invoke<void>('delete_a11y_report', { reportId })
+export const rerunA11yPages = (reportId: string, urls?: string[]) =>
+  invoke<A11yReport>('rerun_a11y_pages', { reportId, urls: urls ?? null })
