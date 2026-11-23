@@ -22,20 +22,20 @@ Built with [Tauri v2](https://tauri.app) + [React 19](https://react.dev) + [Type
 ## Getting started
 
 ```bash
-npm install
-npm run tauri dev       # dev with hot reload
-npm run build:tauri     # full production build
+bun install
+bun tauri dev       # dev with hot reload
+bun tauri build     # full production build
 ```
 
 ## Scripts
 
 | Command | Description |
 |---|---|
-| `npm run dev` | Vite dev server |
-| `npm run build` | TypeScript check + Vite build |
-| `npm run tauri dev` | Tauri dev (hot reload) |
-| `npm run tauri build` | Production Tauri bundle |
-| `npm run build:tauri` | Frontend build + Tauri build |
+| `bun run dev` | Vite dev server |
+| `bun run build` | TypeScript check + Vite build |
+| `bun tauri dev` | Tauri dev (hot reload) |
+| `bun tauri build` | Production Tauri bundle |
+| `bun run build:tauri` | Frontend build + Tauri build |
 
 ## How it works
 
