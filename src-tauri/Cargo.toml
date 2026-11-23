@@ -1,10 +1,12 @@
 [package]
 name = "app"
+# Keep in sync with package.json (tauri.conf.json reads its version from there).
 version = "0.1.5"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+description = "Desktop link checker and accessibility auditor"
+authors = ["Alchie Tagudin"]
+repository = "https://github.com/chesteralan/LinkCheckerApp"
+readme = "../README.md"
+publish = false
 edition = "2021"
 rust-version = "1.77.2"
 
@@ -21,7 +23,9 @@ tauri-build = { version = "2.6.2", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.2", features = ["devtools"] }
+# Devtools are available in debug builds by default; the "devtools" feature
+# would also ship them in release builds, so it is intentionally not enabled.
+tauri = { version = "2.11.2", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
@@ -30,7 +34,7 @@ scraper = "0.27"
 regex = "1"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-tokio = { version = "1", features = ["full"] }
-boa_engine = "0.17"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+boa_engine = "0.22"
 chromiumoxide = "0.9.1"
 futures = "0.3"

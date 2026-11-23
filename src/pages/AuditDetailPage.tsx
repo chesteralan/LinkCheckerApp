@@ -1,26 +1,48 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { save } from '@tauri-apps/plugin-dialog'
 import { useStore } from '@/hooks/useStore'
 import { useRun } from '@/hooks/useRun'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { ProgressBar } from '@/components/ProgressBar'
 import { ResultsTable } from '@/components/ResultsTable'
 import { LiveSummary } from '@/components/LiveSummary'
-import { writeFile } from '@/lib/tauri'
-import { csvEscape } from '@/utils/csv'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { saveTextFile } from '@/lib/tauri'
+import { toCsv } from '@/utils/csv'
+import { pageOutcome } from '@/utils/runDiff'
 import { TrendsChart } from '@/components/TrendsChart'
-import type { AuditRun } from '@/types'
+import type { Audit, AuditRun } from '@/types'
 
 type AuditTab = 'overview' | 'results' | 'trends'
 
+const TABS: { id: AuditTab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'results', label: 'Results' },
+  { id: 'trends', label: 'Trends' },
+]
+
+/**
+ * Waits for the store, then mounts the detail view keyed by audit id, so moving
+ * between audits never carries edits or run options over (A-24, A-26).
+ */
 export function AuditDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const { audits, targetLists, checkTemplates, updateAudit, deleteAudit } = useStore()
-  const runner = useRun()
-
+  const { audits, loading } = useStore()
+  if (loading) return <div className="text-muted-foreground">Loading...</div>
   const audit = audits.find((a) => a.id === id)
+  if (!audit) return <div className="text-muted-foreground">Audit not found.</div>
+  return <AuditDetail key={audit.id} audit={audit} />
+}
+
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e)
+}
+
+function AuditDetail({ audit }: { audit: Audit }) {
+  const navigate = useNavigate()
+  const { targetLists, checkTemplates, updateAudit, deleteAudit } = useStore()
+  const runner = useRun()
+  const formId = useId()
 
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState(audit?.name ?? '')
@@ -39,46 +61,36 @@ export function AuditDetailPage() {
   const [urlPostfix, setUrlPostfix] = useState(audit?.urlPostfix ?? '')
   const [activeTab, setActiveTab] = useState<AuditTab>('overview')
   const [filter, setFilter] = useState<'all' | 'passed' | 'failed' | 'errored'>('all')
+  const [saving, setSaving] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const a = audit
+  const tl = targetLists.find((t) => t.id === a.targetListId)
+  const ct = checkTemplates.find((c) => c.id === a.checkTemplateId)
+
+  // The runner is global; only show its run here when it belongs to this audit (A-27).
+  const runnerIsThisAudit = runner.ownerKey === `/audits/${a.id}`
+  const thisRun = runnerIsThisAudit ? runner.run : null
+  const thisRunning = runnerIsThisAudit && runner.running
+  const otherRunning = runner.running && !runnerIsThisAudit
+
+  function triggerRun() {
+    if (runner.running) return
+    setActiveTab('results')
+    void runner.start(a.id, originOverride || undefined, urlPostfix || undefined)
+  }
 
   useHotkeys(
     {
-      'Cmd+r': () => {
-        if (audit && !runner.running) {
-          setActiveTab('results')
-          runner.start(audit.id, originOverride || undefined, urlPostfix || undefined)
-        }
-      },
-      'Ctrl+r': () => {
-        if (audit && !runner.running) {
-          setActiveTab('results')
-          runner.start(audit.id, originOverride || undefined, urlPostfix || undefined)
-        }
-      },
-      'Cmd+Enter': () => {
-        if (editing && editName.trim()) {
-          setOriginOverride(editOriginOverride)
-          setUrlPostfix(editUrlPostfix)
-          setEditing(false)
-        }
-      },
-      'Ctrl+Enter': () => {
-        if (editing && editName.trim()) {
-          setOriginOverride(editOriginOverride)
-          setUrlPostfix(editUrlPostfix)
-          setEditing(false)
-        }
+      'Mod+r': triggerRun,
+      // Cmd/Ctrl+Enter submits the edit form (A-25).
+      'Mod+Enter': () => {
+        if (editing) void handleUpdate()
       },
     },
     true,
   )
-
-  if (!audit) {
-    return <div className="text-muted-foreground">Audit not found.</div>
-  }
-  const a = audit
-
-  const tl = targetLists.find((t) => t.id === a.targetListId)
-  const ct = checkTemplates.find((c) => c.id === a.checkTemplateId)
 
   function startEdit() {
     setEditName(a.name)
@@ -86,70 +98,93 @@ export function AuditDetailPage() {
     setEditBatchSize(a.config.batchSize)
     setEditTimeoutSecs(a.config.timeoutSecs)
     setEditHeaders(a.config.headers ?? {})
+    setEditHeaderKey('')
+    setEditHeaderVal('')
+    setEditCookies(a.config.cookies ?? [])
+    setEditCookieKey('')
+    setEditCookieVal('')
     setEditOriginOverride(a.originOverride ?? '')
     setEditUrlPostfix(a.urlPostfix ?? '')
+    setActionError(null)
     setEditing(true)
   }
 
   async function handleUpdate() {
-    if (!editName.trim()) return
-    await updateAudit(a.id, {
-      name: editName,
-      config: { mode: editMode, batchSize: editBatchSize, timeoutSecs: editTimeoutSecs, headers: editHeaders, cookies: editCookies },
-      originOverride: editOriginOverride,
-      urlPostfix: editUrlPostfix,
-    })
-    setOriginOverride(editOriginOverride)
-    setUrlPostfix(editUrlPostfix)
-    setEditing(false)
+    if (!editName.trim() || saving) return
+    setSaving(true)
+    setActionError(null)
+    try {
+      await updateAudit(a.id, {
+        name: editName.trim(),
+        config: {
+          mode: editMode,
+          batchSize: Math.max(1, editBatchSize || 1),
+          timeoutSecs: Math.max(1, editTimeoutSecs || 1),
+          headers: editHeaders,
+          cookies: editCookies,
+        },
+        // An empty string clears the value on the backend.
+        originOverride: editOriginOverride.trim(),
+        urlPostfix: editUrlPostfix.trim(),
+      })
+      setOriginOverride(editOriginOverride.trim())
+      setUrlPostfix(editUrlPostfix.trim())
+      setEditing(false)
+    } catch (e) {
+      setActionError(`Could not save the audit: ${errorText(e)}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function handleDelete() {
-    await deleteAudit(a.id)
-    navigate('/audits')
+    setConfirmDelete(false)
+    setActionError(null)
+    try {
+      await deleteAudit(a.id)
+      navigate('/audits')
+    } catch (e) {
+      setActionError(`Could not delete the audit: ${errorText(e)}`)
+    }
   }
 
-  async function handleRun() {
-    setActiveTab('results')
-    await runner.start(a.id, originOverride || undefined, urlPostfix || undefined)
+  async function handleClearBaseline() {
+    setActionError(null)
+    try {
+      await updateAudit(a.id, { baselineRunId: null })
+    } catch (e) {
+      setActionError(`Could not clear the baseline: ${errorText(e)}`)
+    }
   }
 
   async function exportCsv(run: AuditRun, selectors: { id: string; label: string; selector: string }[]) {
-    const path = await save({
-      defaultPath: `${a.name}-${new Date().toISOString().slice(0, 10)}.csv`,
-      filters: [{ name: 'CSV', extensions: ['csv'] }],
-    })
-    if (!path) return
-
-    const header = ['URL', 'Status', 'Response Time (ms)', 'Error', 'Page Title']
-      .concat(selectors.map((s) => s.label))
-      .join(',')
-
-    const rows = run.results.map((r) => {
-      const cols = [
-        csvEscape(r.url),
-        r.status?.toString() ?? '',
-        r.responseTimeMs?.toString() ?? '',
-        csvEscape(r.error ?? ''),
-        csvEscape(r.pageTitle ?? ''),
-      ]
-      selectors.forEach((sel) => {
+    const header = ['URL', 'Status', 'Response Time (ms)', 'Error', 'Page Title', ...selectors.map((s) => s.label)]
+    const rows = run.results.map((r) => [
+      r.url,
+      r.status,
+      r.responseTimeMs,
+      r.error,
+      r.pageTitle,
+      ...selectors.map((sel) => {
         const cr = r.checks.find((c) => c.selectorCheckId === sel.id)
-        cols.push(cr ? `${cr.found ? '✓' : '✗'}${cr.textContent ? ` (${cr.textContent})` : ''}` : '—')
+        return cr ? `${cr.found ? '✓' : '✗'}${cr.textContent ? ` (${cr.textContent})` : ''}` : '—'
+      }),
+    ])
+    setActionError(null)
+    try {
+      await saveTextFile({
+        defaultName: `${a.name}-${new Date().toISOString().slice(0, 10)}.csv`,
+        content: toCsv(header, rows),
+        filterName: 'CSV',
+        extensions: ['csv'],
       })
-      return cols.join(',')
-    })
-
-    const content = [header, ...rows].join('\n')
-    await writeFile(path, content)
+    } catch (e) {
+      setActionError(`Export failed: ${errorText(e)}`)
+    }
   }
 
-  const filteredResults = (runner.run?.results ?? []).filter((r) => {
-    if (filter === 'passed') return !r.error && r.checks.every((c) => c.found)
-    if (filter === 'failed') return !r.error && r.checks.some((c) => !c.found)
-    if (filter === 'errored') return !!r.error
-    return true
-  })
+  const filteredResults = (thisRun?.results ?? []).filter((r) => filter === 'all' || pageOutcome(r) === filter)
+  const runnerError = runnerIsThisAudit || !runner.running ? runner.error : null
 
   return (
     <div className="space-y-6">
@@ -180,41 +215,54 @@ export function AuditDetailPage() {
         )}
       </div>
 
+      {actionError && (
+        <p role="alert" className="text-sm text-destructive">
+          {actionError}
+        </p>
+      )}
+
+      {runnerError && (
+        <div role="alert" className="flex items-center justify-between gap-2 text-sm text-destructive">
+          <span>Run failed: {runnerError}</span>
+          <button onClick={runner.clearError} className="text-xs underline hover:no-underline">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {otherRunning && runner.runPagePath && (
+        <p className="text-sm text-muted-foreground">
+          Another run is in progress.{' '}
+          <button onClick={() => navigate(runner.runPagePath!)} className="text-primary hover:underline">
+            View running audit
+          </button>
+        </p>
+      )}
+
       <div className="border-b border-border">
-        <div className="flex">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`px-4 py-2 text-sm border-b-2 transition-colors ${
-              activeTab === 'overview'
-                ? 'border-primary text-foreground font-medium'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Overview
-          </button>
-          <button
-            onClick={() => setActiveTab('results')}
-            className={`px-4 py-2 text-sm border-b-2 transition-colors ${
-              activeTab === 'results'
-                ? 'border-primary text-foreground font-medium'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Results{runner.run ? ` (${runner.run.results.length})` : ''}
-          </button>
-          <button
-            onClick={() => setActiveTab('trends')}
-            className={`px-4 py-2 text-sm border-b-2 transition-colors ${
-              activeTab === 'trends'
-                ? 'border-primary text-foreground font-medium'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Trends
-          </button>
+        <div className="flex" role="tablist" aria-label="Audit sections">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              role="tab"
+              id={`${formId}-tab-${tab.id}`}
+              aria-selected={activeTab === tab.id}
+              aria-controls={`${formId}-panel`}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2 text-sm border-b-2 transition-colors ${
+                activeTab === tab.id
+                  ? 'border-primary text-foreground font-medium'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab.label}
+              {tab.id === 'results' && thisRun ? ` (${thisRun.results.length})` : ''}
+            </button>
+          ))}
         </div>
       </div>
 
+      <div role="tabpanel" id={`${formId}-panel`} aria-labelledby={`${formId}-tab-${activeTab}`}>
       {activeTab === 'overview' && (
         <div className="space-y-4">
           <div className="flex gap-2 justify-between items-center">
@@ -223,10 +271,10 @@ export function AuditDetailPage() {
                 <>
                   <button
                     onClick={handleUpdate}
-                    disabled={!editName.trim()}
+                    disabled={!editName.trim() || saving}
                     className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
                   >
-                    Save
+                    {saving ? 'Saving...' : 'Save'}
                   </button>
                   <button
                     onClick={() => setEditing(false)}
@@ -244,7 +292,7 @@ export function AuditDetailPage() {
                     Edit
                   </button>
                   <button
-                    onClick={handleDelete}
+                    onClick={() => setConfirmDelete(true)}
                     className="px-4 py-2 border border-destructive text-destructive rounded-md text-sm hover:bg-destructive/10 transition-colors"
                   >
                     Delete
@@ -254,7 +302,7 @@ export function AuditDetailPage() {
             </div>
             {!editing && (
               <div>
-                {runner.running ? (
+                {thisRunning ? (
                   <button
                     onClick={runner.cancel}
                     className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
@@ -263,8 +311,10 @@ export function AuditDetailPage() {
                   </button>
                 ) : (
                   <button
-                    onClick={handleRun}
-                    className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
+                    onClick={triggerRun}
+                    disabled={otherRunning}
+                    title={otherRunning ? 'Another run is in progress' : undefined}
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
                   >
                     Run Audit
                   </button>
@@ -277,8 +327,9 @@ export function AuditDetailPage() {
             <div className="space-y-4 border border-border rounded-lg p-4 bg-muted/20">
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <label className="text-sm text-muted-foreground block mb-1">Name</label>
+                  <label htmlFor={`${formId}-name`} className="text-sm text-muted-foreground block mb-1">Name</label>
                   <input
+                    id={`${formId}-name`}
                     type="text"
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
@@ -286,8 +337,9 @@ export function AuditDetailPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-muted-foreground block mb-1">Mode</label>
+                  <label htmlFor={`${formId}-mode`} className="text-sm text-muted-foreground block mb-1">Mode</label>
                   <select
+                    id={`${formId}-mode`}
                     value={editMode}
                     onChange={(e) => setEditMode(e.target.value as 'sequential' | 'batch')}
                     className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
@@ -298,8 +350,9 @@ export function AuditDetailPage() {
                 </div>
                 {editMode === 'batch' && (
                   <div>
-                    <label className="text-sm text-muted-foreground block mb-1">Batch Size</label>
+                    <label htmlFor={`${formId}-batch`} className="text-sm text-muted-foreground block mb-1">Batch Size</label>
                     <input
+                      id={`${formId}-batch`}
                       type="number"
                       min={1}
                       max={20}
@@ -310,8 +363,9 @@ export function AuditDetailPage() {
                   </div>
                 )}
                 <div>
-                  <label className="text-sm text-muted-foreground block mb-1">Timeout (s)</label>
+                  <label htmlFor={`${formId}-timeout`} className="text-sm text-muted-foreground block mb-1">Timeout (s)</label>
                   <input
+                    id={`${formId}-timeout`}
                     type="number"
                     min={1}
                     max={120}
@@ -321,8 +375,9 @@ export function AuditDetailPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-muted-foreground block mb-1">Origin Override</label>
+                  <label htmlFor={`${formId}-edit-origin`} className="text-sm text-muted-foreground block mb-1">Origin Override</label>
                   <input
+                    id={`${formId}-edit-origin`}
                     type="text"
                     placeholder="https://staging.example.com"
                     value={editOriginOverride}
@@ -331,8 +386,9 @@ export function AuditDetailPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-muted-foreground block mb-1">URL Postfix</label>
+                  <label htmlFor={`${formId}-edit-postfix`} className="text-sm text-muted-foreground block mb-1">URL Postfix</label>
                   <input
+                    id={`${formId}-edit-postfix`}
                     type="text"
                     placeholder="?utm_source=test"
                     value={editUrlPostfix}
@@ -358,9 +414,10 @@ export function AuditDetailPage() {
                               delete next[k]
                               setEditHeaders(next)
                             }}
+                            aria-label={`Remove header ${k}`}
                             className="text-destructive hover:underline shrink-0"
                           >
-                            ✕
+                            <span aria-hidden="true">✕</span>
                           </button>
                         </div>
                       ))}
@@ -368,6 +425,7 @@ export function AuditDetailPage() {
                         <input
                           type="text"
                           placeholder="Header-Name"
+                          aria-label="New header name"
                           value={editHeaderKey}
                           onChange={(e) => setEditHeaderKey(e.target.value)}
                           className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
@@ -375,6 +433,7 @@ export function AuditDetailPage() {
                         <input
                           type="text"
                           placeholder="Value"
+                          aria-label="New header value"
                           value={editHeaderVal}
                           onChange={(e) => setEditHeaderVal(e.target.value)}
                           className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
@@ -388,7 +447,7 @@ export function AuditDetailPage() {
                           }}
                           className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs font-medium hover:opacity-90 transition-opacity shrink-0"
                         >
-                          Add
+                          Add<span className="sr-only"> header</span>
                         </button>
                       </div>
                     </div>
@@ -407,9 +466,10 @@ export function AuditDetailPage() {
                             <span className="flex-1 truncate">{c.value}</span>
                             <button
                               onClick={() => setEditCookies((prev) => prev.filter((_, j) => j !== i))}
+                              aria-label={`Remove cookie ${c.key}`}
                               className="text-destructive hover:underline shrink-0"
                             >
-                              ✕
+                              <span aria-hidden="true">✕</span>
                             </button>
                           </div>
                         ))}
@@ -417,6 +477,7 @@ export function AuditDetailPage() {
                           <input
                             type="text"
                             placeholder="Name"
+                            aria-label="New cookie name"
                             value={editCookieKey}
                             onChange={(e) => setEditCookieKey(e.target.value)}
                             className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
@@ -424,6 +485,7 @@ export function AuditDetailPage() {
                           <input
                             type="text"
                             placeholder="Value"
+                            aria-label="New cookie value"
                             value={editCookieVal}
                             onChange={(e) => setEditCookieVal(e.target.value)}
                             className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
@@ -437,7 +499,7 @@ export function AuditDetailPage() {
                             }}
                             className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs font-medium hover:opacity-90 transition-opacity shrink-0"
                           >
-                            Add
+                            Add<span className="sr-only"> cookie</span>
                           </button>
                         </div>
                       </div>
@@ -474,8 +536,9 @@ export function AuditDetailPage() {
               <div className="space-y-3 pt-2">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm text-muted-foreground block mb-1">Origin Override (optional)</label>
+                    <label htmlFor={`${formId}-run-origin`} className="text-sm text-muted-foreground block mb-1">Origin Override (optional)</label>
                     <input
+                      id={`${formId}-run-origin`}
                       type="text"
                       placeholder="https://staging.example.com"
                       value={originOverride}
@@ -484,8 +547,9 @@ export function AuditDetailPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm text-muted-foreground block mb-1">URL Postfix (optional)</label>
+                    <label htmlFor={`${formId}-run-postfix`} className="text-sm text-muted-foreground block mb-1">URL Postfix (optional)</label>
                     <input
+                      id={`${formId}-run-postfix`}
                       type="text"
                       placeholder="?utm_source=test"
                       value={urlPostfix}
@@ -499,18 +563,16 @@ export function AuditDetailPage() {
                 <div className="text-sm">
                   <span className="text-muted-foreground">Baseline run: </span>
                   <button
-                    onClick={() => navigate(`/runs/${a.baselineRunId}`)}
+                    onClick={() => navigate(`/history/${a.baselineRunId}`)}
                     className="text-primary underline hover:no-underline"
                   >
                     {a.baselineRunId.slice(0, 8)}…
                   </button>
                   <button
-                    onClick={async () => {
-                      await updateAudit(a.id, { baselineRunId: null })
-                    }}
+                    onClick={handleClearBaseline}
                     className="ml-2 text-xs text-destructive hover:underline"
                   >
-                    Clear
+                    Clear<span className="sr-only"> baseline</span>
                   </button>
                 </div>
               )}
@@ -521,9 +583,11 @@ export function AuditDetailPage() {
 
       {activeTab === 'results' && (
         <div className="space-y-4">
-          {runner.progress && <ProgressBar checked={runner.progress.checked} total={runner.progress.total} />}
+          {thisRunning && runner.progress && (
+            <ProgressBar checked={runner.progress.checked} total={runner.progress.total} />
+          )}
 
-          {runner.running && (
+          {thisRunning && (
             <div className="flex items-center justify-between gap-2 text-sm">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse" />
@@ -538,13 +602,13 @@ export function AuditDetailPage() {
             </div>
           )}
 
-          {(runner.run || runner.running) && (
+          {(thisRun || thisRunning) && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <LiveSummary results={runner.run?.results ?? []} filter={filter} onFilterChange={setFilter} />
-                {runner.run && !runner.running && (
+                <LiveSummary results={thisRun?.results ?? []} filter={filter} onFilterChange={setFilter} />
+                {thisRun && !thisRunning && (
                   <button
-                    onClick={() => exportCsv(runner.run!, ct?.checks ?? [])}
+                    onClick={() => exportCsv(thisRun, ct?.checks ?? [])}
                     className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
                   >
                     Export CSV
@@ -555,18 +619,27 @@ export function AuditDetailPage() {
             </div>
           )}
 
-          {!runner.run && !runner.running && !runner.progress && (
+          {!thisRun && !thisRunning && (
             <p className="text-sm text-muted-foreground">Press "Run Audit" to start checking URLs.</p>
           )}
         </div>
       )}
 
-      {activeTab === 'trends' && a && (
+      {activeTab === 'trends' && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Trends</h3>
           <TrendsChart auditId={a.id} />
         </div>
       )}
+      </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete Audit"
+        message={`Delete the audit "${a.name}" and all of its saved runs? This cannot be undone.`}
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   )
 }

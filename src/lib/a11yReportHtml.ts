@@ -10,6 +10,30 @@ function esc(v: unknown): string {
     .replace(/"/g, '&quot;')
 }
 
+/**
+ * Return `url` only when it is an absolute http(s) URL, else null.
+ *
+ * Help URLs and page URLs in reports come from the audited page (axe runs in the page's own JS
+ * context), so a `javascript:` or `data:` URL must never reach an `href` or `openUrl`.
+ */
+export function safeHref(url: string | null | undefined): string | null {
+  if (!url) return null
+  const trimmed = String(url).trim()
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return parsed.href
+  } catch {
+    // not an absolute URL
+  }
+  return null
+}
+
+/** `<a href>` for a safe URL, or the escaped text alone when the URL is not http(s). */
+function link(url: string | null | undefined, text: string): string {
+  const href = safeHref(url)
+  return href ? `<a href="${esc(href)}" rel="noopener noreferrer">${text}</a>` : text
+}
+
 const SEVERITY_COLORS: Record<string, string> = {
   critical: '#dc2626',
   serious: '#ea580c',
@@ -26,15 +50,26 @@ function issueRow(i: A11yIssue): string {
     <td>${esc((i.standards ?? []).filter((x) => x !== 'wcag').join(', '))}</td>
     <td><code>${esc(i.selector)}</code></td>
     <td>${esc(i.message)}</td>
-    <td>${i.helpUrl ? `<a href="${esc(i.helpUrl)}">WCAG</a>` : ''}</td>
+    <td>${safeHref(i.helpUrl) ? link(i.helpUrl, 'Help') : ''}</td>
   </tr>`
 }
 
 export function a11yReportToHtml(report: A11yReport, auditName: string): string {
   const score = reportScore(report)
   const scoreColor =
-    score != null ? (score >= 90 ? '#16a34a' : score >= 70 ? '#ca8a04' : score >= 40 ? '#ea580c' : '#dc2626') : '#6b7280'
+    score != null
+      ? score >= 90
+        ? '#16a34a'
+        : score >= 70
+          ? '#ca8a04'
+          : score >= 40
+            ? '#ea580c'
+            : '#dc2626'
+      : '#6b7280'
   const s = report.summary
+  // `engine` is stored on reports created after re-runs began using the report's own settings.
+  const engine = report.engine
+  const engineLabel = engine === 'static' ? 'static HTML' : (engine ?? '')
 
   const typeCounts = new Map<string, number>()
   for (const r of report.results) {
@@ -50,9 +85,12 @@ export function a11yReportToHtml(report: A11yReport, auditName: string): string 
       const issues = r.issues.length
         ? `<table><thead><tr><th>Severity</th><th>Rule</th><th>WCAG</th><th>Standards</th><th>Element</th><th>Message</th><th></th></tr></thead><tbody>${r.issues.map(issueRow).join('')}</tbody></table>`
         : `<p class="clean">${r.error ? `Error: ${esc(r.error)}` : 'No issues found.'}</p>`
+      // `truncated` is set by the backend when a page hit the per-page issue cap.
+      const truncated = r.truncated ? '<p class="meta">Results for this page were truncated.</p>' : ''
       return `<section class="page">
-        <h3><a href="${esc(r.url)}">${esc(r.url)}</a></h3>
+        <h3>${link(r.url, esc(r.url))}</h3>
         <p class="meta">${r.status ?? '—'}${r.pageTitle ? ` · ${esc(r.pageTitle)}` : ''}${r.responseTimeMs != null ? ` · ${r.responseTimeMs}ms` : ''}</p>
+        ${truncated}
         ${issues}
       </section>`
     })
@@ -62,6 +100,8 @@ export function a11yReportToHtml(report: A11yReport, auditName: string): string 
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <title>Accessibility Report — ${esc(auditName || report.auditId)}</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
@@ -88,7 +128,7 @@ export function a11yReportToHtml(report: A11yReport, auditName: string): string 
 <h1>Accessibility Report — ${esc(auditName || report.auditId)}</h1>
 <p class="meta">
   ${esc(report.startedAt)}${report.completedAt ? ` → ${esc(report.completedAt)}` : ''} ·
-  Status: ${esc(report.status)} · Standards: ${esc(standardsLabel(report.standards))} · Report ${esc(report.id.slice(0, 8))}
+  Status: ${esc(report.status)} · Standards: ${esc(standardsLabel(report.standards))}${engineLabel ? ` · Engine: ${esc(engineLabel)}` : ''} · Report ${esc(report.id.slice(0, 8))}
 </p>
 
 <div class="cards">

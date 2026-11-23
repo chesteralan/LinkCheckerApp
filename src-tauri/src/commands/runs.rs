@@ -1,11 +1,14 @@
 use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::fs;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Semaphore;
 
+use crate::checker::{
+    emit_run_error, read_body_capped, resolve_operation_id, CancelToken, MAX_BODY_BYTES,
+};
 use crate::models::*;
+use crate::commands::lock_or_recover;
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -28,12 +31,12 @@ pub async fn scrape_links(url: String) -> Result<Vec<String>, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let html = client
+    let response = client
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("Failed to fetch URL: {}", e))?
-        .text()
+        .map_err(|e| format!("Failed to fetch URL: {}", e))?;
+    let html = read_body_capped(response, MAX_BODY_BYTES)
         .await
         .map_err(|e| format!("Failed to read response: {}", e))?;
 
@@ -126,12 +129,12 @@ async fn scrape_single(
     url: String,
     options: ScrapeSelectorsOptions,
 ) -> Result<Vec<ScrapedSelector>, String> {
-    let html = client
+    let response = client
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("Failed to fetch {}: {}", url, e))?
-        .text()
+        .map_err(|e| format!("Failed to fetch {}: {}", url, e))?;
+    let html = read_body_capped(response, MAX_BODY_BYTES)
         .await
         .map_err(|e| format!("Failed to read {}: {}", url, e))?;
 
@@ -198,6 +201,13 @@ async fn scrape_single(
         .collect())
 }
 
+/// Starts a quick (ad-hoc) run.
+///
+/// `run_id` may be supplied by the frontend (a UUID) so it can filter
+/// `run:*` events before the command returns; otherwise one is generated.
+/// Resolves with the run ID once the run has finished and been saved. On
+/// failure, emits `run:error` `{ runId, message }` and rejects.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command(rename_all = "camelCase")]
 pub async fn quick_run(
     app: AppHandle,
@@ -207,7 +217,11 @@ pub async fn quick_run(
     config: QuickRunConfig,
     origin_override: Option<String>,
     url_postfix: Option<String>,
-) -> Result<(), String> {
+    run_id: Option<String>,
+) -> Result<String, String> {
+    let run_id = resolve_operation_id(run_id);
+    let registration = state.checker.register_run(&run_id);
+
     let audit = Audit {
         id: uuid::Uuid::new_v4().to_string(),
         name: "Quick Audit".into(),
@@ -248,16 +262,68 @@ pub async fn quick_run(
         folder: None,
     };
 
-    let run = state
+    let result = state
         .checker
-        .run(&app, &audit, &target_list, &check_template)
+        .run(
+            &app,
+            &run_id,
+            registration.token(),
+            &audit,
+            &target_list,
+            &check_template,
+        )
         .await;
-
-    state.storage.save_run(&run)?;
-
-    Ok(())
+    if result.is_ok() {
+        prune_after_run(&state);
+    }
+    finish_run_command(&app, &run_id, result)
 }
 
+fn finish_run_command(
+    app: &AppHandle,
+    run_id: &str,
+    result: Result<AuditRun, String>,
+) -> Result<String, String> {
+    match result {
+        Ok(_) => Ok(run_id.to_string()),
+        Err(message) => {
+            emit_run_error(app, run_id, &message);
+            Err(message)
+        }
+    }
+}
+
+fn load_audit_inputs(
+    state: &AppState,
+    audit_id: &str,
+) -> Result<(Audit, TargetList, CheckTemplate), String> {
+    let data = state.lock_data();
+
+    let audit = data
+        .audits
+        .iter()
+        .find(|a| a.id == audit_id)
+        .ok_or_else(|| "Audit not found".to_string())?
+        .clone();
+
+    let target_list = data
+        .target_lists
+        .iter()
+        .find(|tl| tl.id == audit.target_list_id)
+        .ok_or_else(|| "Target list not found".to_string())?
+        .clone();
+
+    let check_template = data
+        .check_templates
+        .iter()
+        .find(|ct| ct.id == audit.check_template_id)
+        .ok_or_else(|| "Check template not found".to_string())?
+        .clone();
+
+    Ok((audit, target_list, check_template))
+}
+
+/// Runs a saved audit. See [`quick_run`] for the `run_id` contract.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn run_audit(
     app: AppHandle,
@@ -265,32 +331,14 @@ pub async fn run_audit(
     audit_id: String,
     origin_override: Option<String>,
     url_postfix: Option<String>,
-) -> Result<(), String> {
-    let (mut audit, target_list, check_template) = {
-        let data = state.data.lock().map_err(|e| e.to_string())?;
+    run_id: Option<String>,
+) -> Result<String, String> {
+    let run_id = resolve_operation_id(run_id);
+    let registration = state.checker.register_run(&run_id);
 
-        let audit = data
-            .audits
-            .iter()
-            .find(|a| a.id == audit_id)
-            .ok_or_else(|| "Audit not found".to_string())?
-            .clone();
-
-        let target_list = data
-            .target_lists
-            .iter()
-            .find(|tl| tl.id == audit.target_list_id)
-            .ok_or_else(|| "Target list not found".to_string())?
-            .clone();
-
-        let check_template = data
-            .check_templates
-            .iter()
-            .find(|ct| ct.id == audit.check_template_id)
-            .ok_or_else(|| "Check template not found".to_string())?
-            .clone();
-
-        (audit, target_list, check_template)
+    let (mut audit, target_list, check_template) = match load_audit_inputs(&state, &audit_id) {
+        Ok(v) => v,
+        Err(message) => return finish_run_command(&app, &run_id, Err(message)),
     };
 
     if let Some(ref oo) = origin_override {
@@ -304,30 +352,38 @@ pub async fn run_audit(
         }
     }
 
-    let run = state
+    let result = state
         .checker
-        .run(&app, &audit, &target_list, &check_template)
+        .run(
+            &app,
+            &run_id,
+            registration.token(),
+            &audit,
+            &target_list,
+            &check_template,
+        )
         .await;
+    if result.is_ok() {
+        prune_after_run(&state);
+    }
+    finish_run_command(&app, &run_id, result)
+}
 
-    state.storage.save_run(&run)?;
-
+/// Cancels the run with `run_id`, or every active run when it is omitted.
+#[tauri::command(rename_all = "camelCase")]
+pub fn cancel_run(state: State<'_, AppState>, run_id: Option<String>) -> Result<(), String> {
+    state.checker.cancel(run_id.as_deref());
     Ok(())
 }
 
-#[tauri::command]
-pub fn cancel_run(state: State<'_, AppState>) -> Result<(), String> {
-    state.checker.cancel();
+/// Cancels the link scan with `scan_id`, or every active scan when omitted.
+#[tauri::command(rename_all = "camelCase")]
+pub fn cancel_link_check(
+    state: State<'_, AppState>,
+    scan_id: Option<String>,
+) -> Result<(), String> {
+    state.checker.cancel_link_scan(scan_id.as_deref());
     Ok(())
-}
-
-#[tauri::command]
-pub fn write_file(path: String, content: String) -> Result<(), String> {
-    fs::write(&path, &content).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn read_file(path: String) -> Result<String, String> {
-    fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -345,32 +401,14 @@ pub fn list_audit_runs(
     state: State<'_, AppState>,
     audit_id: String,
 ) -> Result<Vec<AuditRun>, String> {
-    let runs = state.storage.load_recent_runs(500);
-    let mut result: Vec<AuditRun> = runs
-        .into_iter()
-        .filter(|r| r.audit_id == audit_id)
-        .collect();
-    for run in &mut result {
-        run.results.clear();
-    }
-    Ok(result)
+    // Filtered before limiting and parsed without per-page results (A-54).
+    Ok(state.storage.load_audit_runs(&audit_id, None))
 }
 
 #[tauri::command]
 pub fn get_data_path(state: State<'_, AppState>) -> Result<String, String> {
     let path = state.storage.app_dir();
     Ok(path.to_string_lossy().to_string())
-}
-
-#[tauri::command]
-pub fn open_data_folder(state: State<'_, AppState>) -> Result<(), String> {
-    let path = state.storage.app_dir();
-    let path_str = path.to_string_lossy();
-    std::process::Command::new("open")
-        .arg(path_str.as_ref())
-        .spawn()
-        .map_err(|e| format!("Failed to open folder: {}", e))?;
-    Ok(())
 }
 
 #[tauri::command]
@@ -386,19 +424,52 @@ pub fn clear_history(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn prune_history(state: State<'_, AppState>) -> Result<(), String> {
-    let data = state.data.lock().map_err(|e| e.to_string())?;
-    let max_days = data.max_history_days;
-    drop(data);
+    let max_days = state.lock_data().max_history_days;
     state.storage.prune_history(max_days)?;
     Ok(())
 }
 
+/// Largest accepted retention (about 100 years).
+const MAX_HISTORY_DAYS: u32 = 36_500;
+
+/// How many days of run, accessibility and link-check history are kept.
+#[tauri::command]
+pub fn get_history_retention(state: State<'_, AppState>) -> Result<u32, String> {
+    Ok(state.lock_data().max_history_days)
+}
+
+/// Sets how many days of history to keep (1..=36500) and applies it
+/// immediately. `0` is rejected so a typo cannot be read as "delete
+/// everything"; legacy data files with `0` are treated as keep-forever by
+/// storage (A-53).
 #[tauri::command]
 pub fn set_history_retention(state: State<'_, AppState>, days: u32) -> Result<(), String> {
-    let mut data = state.data.lock().map_err(|e| e.to_string())?;
-    data.max_history_days = days;
-    state.storage.save(&data)?;
+    validate_retention_days(days)?;
+    state.mutate_data(|data| {
+        data.max_history_days = days;
+        Ok(())
+    })?;
+    state.storage.prune_history(days)?;
     Ok(())
+}
+
+fn validate_retention_days(days: u32) -> Result<(), String> {
+    if days == 0 || days > MAX_HISTORY_DAYS {
+        return Err(format!(
+            "Retention must be between 1 and {} days",
+            MAX_HISTORY_DAYS
+        ));
+    }
+    Ok(())
+}
+
+/// Applies the configured history retention after a run has been saved
+/// (A-53). Failures are logged, never surfaced: the run itself succeeded.
+pub(crate) fn prune_after_run(state: &AppState) {
+    let max_days = state.lock_data().max_history_days;
+    if let Err(e) = state.storage.prune_history(max_days) {
+        log::warn!("history pruning failed: {}", e);
+    }
 }
 
 #[derive(Deserialize, Clone)]
@@ -437,11 +508,11 @@ async fn get_page(client: &reqwest::Client, url: &str) -> PageFetch {
     match client.get(url).send().await {
         Ok(resp) => {
             let status = resp.status();
-            let html = resp
-                .text()
+            // Stream at most MAX_A11Y_HTML_BYTES bytes; skip non-HTML bodies (A-38).
+            let html = read_body_capped(resp, MAX_A11Y_HTML_BYTES)
                 .await
                 .ok()
-                .map(|t| t.chars().take(MAX_A11Y_HTML_BYTES).collect());
+                .filter(|h| !h.is_empty());
             PageFetch {
                 status: Some(status.as_u16()),
                 status_text: status.canonical_reason().unwrap_or("unknown").to_string(),
@@ -478,9 +549,23 @@ async fn head_page(client: &reqwest::Client, url: &str) -> PageFetch {
     }
 }
 
+/// Parses and normalises a crawlable URL: http(s) only, fragment removed (A-44).
+fn normalize_link(url: reqwest::Url) -> Option<String> {
+    let mut url = url;
+    if !matches!(url.scheme(), "http" | "https") {
+        return None;
+    }
+    url.set_fragment(None);
+    Some(url.to_string())
+}
+
 fn extract_links_from_html(html: &str, base_url: &str) -> Vec<String> {
+    let base = match reqwest::Url::parse(base_url) {
+        Ok(b) => b,
+        Err(_) => return Vec::new(),
+    };
     let document = scraper::Html::parse_document(html);
-    let selector = scraper::Selector::parse("a[href]").unwrap();
+    let selector = scraper::Selector::parse("a[href]").expect("static selector");
     let mut links = Vec::new();
 
     for el in document.select(&selector) {
@@ -493,13 +578,8 @@ fn extract_links_from_html(html: &str, base_url: &str) -> Vec<String> {
             {
                 continue;
             }
-            if let Ok(base) = reqwest::Url::parse(base_url) {
-                if let Ok(resolved) = base.join(href) {
-                    let s = resolved.as_str().to_string();
-                    if s.starts_with("http") {
-                        links.push(s);
-                    }
-                }
+            if let Some(s) = base.join(href).ok().and_then(normalize_link) {
+                links.push(s);
             }
         }
     }
@@ -524,23 +604,56 @@ fn origin_matches(seed: &Option<reqwest::Url>, url: &str) -> bool {
     })
 }
 
+/// Marks `link` as visited if it is new and the crawl budget allows it.
+/// The seed occupies one slot, so at most `MAX_LINK_CHECKS` links beyond the
+/// seed are ever scheduled or announced (A-44).
+fn try_visit(visited: &std::sync::Mutex<HashSet<String>>, link: &str) -> bool {
+    let mut v = lock_or_recover(visited);
+    if v.contains(link) || v.len() > MAX_LINK_CHECKS {
+        return false;
+    }
+    v.insert(link.to_string());
+    true
+}
+
+fn tag_scan(scan_id: &str, value: serde_json::Value) -> serde_json::Value {
+    let mut value = value;
+    if let serde_json::Value::Object(ref mut map) = value {
+        map.insert("scanId".into(), serde_json::Value::String(scan_id.into()));
+    }
+    value
+}
+
+/// Crawls `url` and checks every discovered link.
+///
+/// `scan_id` (a UUID) may be supplied so the frontend can cancel the scan
+/// with `cancel_link_check` and filter events; every `linkcheck:*` payload
+/// carries `scanId`. A cancelled scan emits `linkcheck:cancelled` `{ scanId }`
+/// and resolves with the partial results, which are also saved.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn check_links(
     app: AppHandle,
     url: String,
     options: CheckLinksOptions,
     state: State<'_, AppState>,
+    scan_id: Option<String>,
 ) -> Result<Vec<LinkCheckResult>, String> {
+    let scan_id = resolve_operation_id(scan_id);
+    let registration = state.checker.register_link_scan(&scan_id);
+    let token: Arc<CancelToken> = registration.token();
+
     let started_at = chrono::Utc::now().to_rfc3339();
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(options.timeout_secs))
+        .timeout(std::time::Duration::from_secs(options.timeout_secs.max(1)))
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()
         .map_err(|e| e.to_string())?;
 
-    let parsed = reqwest::Url::parse(&url).map_err(|_| "Invalid URL".to_string())?;
+    let parsed = reqwest::Url::parse(url.trim()).map_err(|_| "Invalid URL".to_string())?;
+    let url = normalize_link(parsed.clone())
+        .ok_or_else(|| "Only http(s) URLs can be checked".to_string())?;
     let origin = if options.same_origin_only {
-        Some(parsed.clone())
+        Some(parsed)
     } else {
         None
     };
@@ -549,28 +662,41 @@ pub async fn check_links(
     let semaphore = Arc::new(Semaphore::new(10));
     let results = Arc::new(std::sync::Mutex::new(Vec::new()));
     let visited = Arc::new(std::sync::Mutex::new(HashSet::from([url.clone()])));
-    let checked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
     // Seed page — always GET so the body can feed link extraction and a11y
-    let seed_fetch = get_page(&client, &url).await;
-    let seed_html = seed_fetch.html.clone();
-    let seed_result = LinkCheckResult {
-        url: url.clone(),
-        source_url: url.clone(),
-        status: seed_fetch.status,
-        status_text: seed_fetch.status_text,
-        error: seed_fetch.error,
-        depth: 0,
-        a11y_issues: if include_a11y {
-            scan_a11y(seed_html.as_deref())
-        } else {
-            Vec::new()
-        },
+    let seed_fetch = tokio::select! {
+        biased;
+        _ = token.cancelled() => None,
+        f = get_page(&client, &url) => Some(f),
     };
-    let _ = app.emit("linkcheck:result", &seed_result);
-    results.lock().unwrap().push(seed_result);
 
-    if max_depth > 0 {
+    let mut seed_html = None;
+    if let Some(seed_fetch) = seed_fetch {
+        seed_html = seed_fetch.html.clone();
+        let seed_result = LinkCheckResult {
+            url: url.clone(),
+            source_url: url.clone(),
+            status: seed_fetch.status,
+            status_text: seed_fetch.status_text,
+            error: seed_fetch.error,
+            depth: 0,
+            a11y_issues: if include_a11y {
+                scan_a11y(seed_html.as_deref())
+            } else {
+                Vec::new()
+            },
+        };
+        let _ = app.emit(
+            "linkcheck:result",
+            tag_scan(
+                &scan_id,
+                serde_json::to_value(&seed_result).unwrap_or_default(),
+            ),
+        );
+        lock_or_recover(&results).push(seed_result);
+    }
+
+    if max_depth > 0 && !token.is_cancelled() {
         // Level-order crawl: each level fetches its frontier (GET when the
         // body is needed for expansion or a11y, HEAD otherwise) and pages
         // that respond OK and aren't at max depth feed the next frontier.
@@ -581,7 +707,7 @@ pub async fn check_links(
             .unwrap_or_default()
             .into_iter()
             .filter(|l| origin_matches(&origin, l))
-            .filter(|l| visited.lock().unwrap().insert(l.clone()))
+            .filter(|l| try_visit(&visited, l))
             .map(|l| (l, url.clone()))
             .collect();
         frontier.sort();
@@ -589,6 +715,7 @@ pub async fn check_links(
             let _ = app.emit(
                 "linkcheck:discovered",
                 serde_json::json!({
+                    "scanId": scan_id,
                     "url": l,
                     "depth": 1,
                     "sourceUrl": s,
@@ -596,37 +723,36 @@ pub async fn check_links(
             );
         }
 
-        for depth in 1..=max_depth {
+        'levels: for depth in 1..=max_depth {
             if frontier.is_empty() {
                 break;
             }
             let next_frontier = Arc::new(std::sync::Mutex::new(Vec::<(String, String)>::new()));
-            let mut handles = Vec::new();
+            let mut tasks = tokio::task::JoinSet::new();
 
             for (link, source) in frontier.drain(..) {
-                if checked.load(std::sync::atomic::Ordering::SeqCst) >= MAX_LINK_CHECKS {
-                    break;
-                }
+                let permit = tokio::select! {
+                    biased;
+                    _ = token.cancelled() => break,
+                    p = semaphore.clone().acquire_owned() => p.map_err(|e| e.to_string())?,
+                };
 
                 let client = client.clone();
                 let app = app.clone();
                 let results = results.clone();
-                let sem = semaphore.clone();
                 let visited = visited.clone();
                 let origin = origin.clone();
                 let next_frontier = next_frontier.clone();
-                let checked = checked.clone();
-                let link = link.clone();
+                let scan_id = scan_id.clone();
                 let can_expand = depth < max_depth;
                 let need_body = can_expand || include_a11y;
 
-                let permit = sem.acquire_owned().await.map_err(|e| e.to_string())?;
-                checked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                handles.push(tokio::spawn(async move {
+                tasks.spawn(async move {
                     let _permit = permit;
                     let _ = app.emit(
                         "linkcheck:checking",
                         serde_json::json!({
+                            "scanId": scan_id,
                             "url": link.clone(),
                             "depth": depth,
                             "sourceUrl": source.clone(),
@@ -652,8 +778,14 @@ pub async fn check_links(
                         depth,
                         a11y_issues,
                     };
-                    let _ = app.emit("linkcheck:result", &result_entry);
-                    results.lock().unwrap().push(result_entry);
+                    let _ = app.emit(
+                        "linkcheck:result",
+                        tag_scan(
+                            &scan_id,
+                            serde_json::to_value(&result_entry).unwrap_or_default(),
+                        ),
+                    );
+                    lock_or_recover(&results).push(result_entry);
 
                     if !can_expand || !ok {
                         return;
@@ -663,18 +795,16 @@ pub async fn check_links(
                         .as_deref()
                         .map(|h| extract_links_from_html(h, &link))
                         .unwrap_or_default();
-                    let mut next = next_frontier.lock().unwrap();
+                    let mut next = lock_or_recover(&next_frontier);
                     for sub in sub_links {
-                        if checked.load(std::sync::atomic::Ordering::SeqCst) >= MAX_LINK_CHECKS {
-                            break;
-                        }
                         if !origin_matches(&origin, &sub) {
                             continue;
                         }
-                        if visited.lock().unwrap().insert(sub.clone()) {
+                        if try_visit(&visited, &sub) {
                             let _ = app.emit(
                                 "linkcheck:discovered",
                                 serde_json::json!({
+                                    "scanId": scan_id,
                                     "url": sub,
                                     "depth": depth + 1,
                                     "sourceUrl": link,
@@ -683,23 +813,36 @@ pub async fn check_links(
                             next.push((sub, link.clone()));
                         }
                     }
-                }));
+                });
             }
 
-            for h in handles {
-                let _ = h.await;
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = token.cancelled() => {
+                        tasks.abort_all();
+                        while tasks.join_next().await.is_some() {}
+                        break 'levels;
+                    }
+                    next = tasks.join_next() => {
+                        if next.is_none() {
+                            break;
+                        }
+                    }
+                }
             }
 
-            let mut next = next_frontier.lock().unwrap().clone();
+            let mut next = lock_or_recover(&next_frontier).clone();
             next.sort();
             next.dedup();
             frontier = next;
         }
     }
 
-    let final_results = results.lock().unwrap().clone();
+    let cancelled = token.is_cancelled();
+    let final_results = lock_or_recover(&results).clone();
     let scan = LinkCheckScan {
-        id: uuid::Uuid::new_v4().to_string(),
+        id: scan_id.clone(),
         url,
         max_depth,
         same_origin_only: options.same_origin_only,
@@ -709,6 +852,13 @@ pub async fn check_links(
         results: final_results.clone(),
     };
     let _ = state.storage.save_link_check_scan(&scan);
+    prune_after_run(&state);
+    if cancelled {
+        let _ = app.emit(
+            "linkcheck:cancelled",
+            serde_json::json!({ "scanId": scan_id }),
+        );
+    }
     Ok(final_results)
 }
 
@@ -728,4 +878,72 @@ pub fn get_link_check_scan(
 #[tauri::command(rename_all = "camelCase")]
 pub fn delete_link_check_scan(state: State<'_, AppState>, scan_id: String) -> Result<(), String> {
     state.storage.delete_link_check_scan(&scan_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retention_rejects_zero_and_absurd_values() {
+        assert!(validate_retention_days(0).is_err());
+        assert!(validate_retention_days(1).is_ok());
+        assert!(validate_retention_days(90).is_ok());
+        assert!(validate_retention_days(MAX_HISTORY_DAYS).is_ok());
+        assert!(validate_retention_days(MAX_HISTORY_DAYS + 1).is_err());
+    }
+
+    #[test]
+    fn test_extract_links_strips_fragments_and_dedups() {
+        let html = r##"<a href="/a#x">1</a><a href="/a#y">2</a><a href="#top">3</a>
+            <a href="mailto:x@y.z">4</a><a href="ftp://h/f">5</a><a href="b">6</a>"##;
+        let links = extract_links_from_html(html, "https://e.com/dir/page");
+        assert_eq!(links, vec!["https://e.com/a", "https://e.com/dir/b"]);
+    }
+
+    #[test]
+    fn test_normalize_link() {
+        let u = reqwest::Url::parse("https://e.com/p#frag").unwrap();
+        assert_eq!(normalize_link(u).as_deref(), Some("https://e.com/p"));
+        let u = reqwest::Url::parse("file:///etc/passwd").unwrap();
+        assert_eq!(normalize_link(u), None);
+    }
+
+    #[test]
+    fn test_try_visit_enforces_budget() {
+        let visited = std::sync::Mutex::new(HashSet::from(["seed".to_string()]));
+        let mut accepted = 0;
+        for i in 0..(MAX_LINK_CHECKS + 100) {
+            if try_visit(&visited, &format!("l{}", i)) {
+                accepted += 1;
+            }
+        }
+        assert_eq!(accepted, MAX_LINK_CHECKS);
+        assert!(!try_visit(&visited, "seed"));
+    }
+
+    #[test]
+    fn test_origin_matches() {
+        let seed = Some(reqwest::Url::parse("https://e.com/").unwrap());
+        assert!(origin_matches(&seed, "https://e.com/x"));
+        assert!(!origin_matches(&seed, "https://other.com/x"));
+        assert!(origin_matches(&None, "https://other.com/x"));
+    }
+
+    #[test]
+    fn test_tag_scan() {
+        let v = tag_scan("s1", serde_json::json!({ "url": "u" }));
+        assert_eq!(v["scanId"], "s1");
+        assert_eq!(v["url"], "u");
+    }
+
+    #[test]
+    fn test_quick_run_config_deserializes() {
+        let cfg: QuickRunConfig = serde_json::from_value(serde_json::json!({
+            "mode": "batch", "batchSize": 0, "timeoutSecs": 0
+        }))
+        .unwrap();
+        assert_eq!(cfg.batch_size, 0);
+        assert!(cfg.headers.is_empty());
+    }
 }

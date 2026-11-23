@@ -11,21 +11,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # tauri.conf.json reads its version from package.json; Cargo.toml must match (A-75).
+      - name: Check package.json and Cargo.toml versions match
+        run: |
+          pkg=$(node -p "require('./package.json').version")
+          cargo=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -n1)
+          echo "package.json=$pkg Cargo.toml=$cargo"
+          test "$pkg" = "$cargo" || { echo "::error::Version mismatch: package.json $pkg vs src-tauri/Cargo.toml $cargo"; exit 1; }
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run test -- --run
-      - run: npm run build
+          bun-version: 1.3.12
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run format:check
+      - run: bun run test:run
+      - run: bun run build
 
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy, rustfmt
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
       - name: Install Tauri dependencies
         run: >
           sudo apt-get update &&
@@ -38,5 +51,21 @@ jobs:
           librsvg2-dev
           libssl-dev
           patchelf
+      # tauri::generate_context! requires frontendDist (../build) to exist at compile time
+      - name: Create placeholder frontend dist
+        run: mkdir -p build
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo check --manifest-path src-tauri/Cargo.toml
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Fails on known vulnerabilities in Cargo.lock (A-60). Unmaintained/unsound
+      # warnings from Tauri's transitive dependencies are reported but allowed.
+      - run: cargo audit --file src-tauri/Cargo.lock

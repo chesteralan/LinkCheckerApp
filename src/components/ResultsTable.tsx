@@ -1,4 +1,5 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { safeHref } from '@/lib/a11yReportHtml'
 import type { PageResult, SelectorCheck } from '@/types'
 
 interface Props {
@@ -16,12 +17,20 @@ export function ResultsTable({ results, selectors }: Props) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border">
-            <th className="text-left py-2 px-3 font-medium">URL</th>
-            <th className="text-left py-2 px-3 font-medium">Status</th>
-            <th className="text-right py-2 px-3 font-medium">Time</th>
-            <th className="text-left py-2 px-3 font-medium">Page Title</th>
+            <th scope="col" className="text-left py-2 px-3 font-medium">
+              URL
+            </th>
+            <th scope="col" className="text-left py-2 px-3 font-medium">
+              Status
+            </th>
+            <th scope="col" className="text-right py-2 px-3 font-medium">
+              Time
+            </th>
+            <th scope="col" className="text-left py-2 px-3 font-medium">
+              Page Title
+            </th>
             {selectors.map((sel) => (
-              <th key={sel.id} className="text-left py-2 px-3 font-medium" title={sel.selector}>
+              <th key={sel.id} scope="col" className="text-left py-2 px-3 font-medium" title={sel.selector}>
                 {sel.label}
               </th>
             ))}
@@ -32,7 +41,11 @@ export function ResultsTable({ results, selectors }: Props) {
             <tr key={i} className="border-b border-border hover:bg-muted/30">
               <td className="py-2 px-3 max-w-[200px] truncate font-mono text-xs" title={result.url}>
                 <button
-                  onClick={() => openUrl(result.url)}
+                  type="button"
+                  onClick={() => {
+                    const href = safeHref(result.url)
+                    if (href) openUrl(href).catch(() => {})
+                  }}
                   className="hover:text-primary hover:underline text-left w-full truncate"
                 >
                   {result.url}
@@ -46,6 +59,7 @@ export function ResultsTable({ results, selectors }: Props) {
                     className={`inline-flex items-center gap-1 ${(result.status ?? 0) >= 400 ? 'text-destructive' : 'text-success'}`}
                   >
                     <span
+                      aria-hidden="true"
                       className={`w-1.5 h-1.5 rounded-full ${(result.status ?? 0) >= 400 ? 'bg-destructive' : 'bg-success'}`}
                     />
                     {result.status}
@@ -64,7 +78,8 @@ export function ResultsTable({ results, selectors }: Props) {
                   <td key={sel.id} className="py-2 px-3">
                     {cr ? (
                       <span className={cr.found ? 'text-success' : 'text-destructive'}>
-                        {cr.found ? '✓' : '✗'}
+                        <span aria-hidden="true">{cr.found ? '✓' : '✗'}</span>
+                        <span className="sr-only">{cr.found ? 'Found' : 'Not found'}</span>
                         {cr.found && cr.textContent && (
                           <span className="ml-1 text-xs text-muted-foreground" title={cr.textContent}>
                             ({cr.count})
@@ -72,7 +87,10 @@ export function ResultsTable({ results, selectors }: Props) {
                         )}
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-muted-foreground" title="Not checked">
+                        <span aria-hidden="true">—</span>
+                        <span className="sr-only">Not checked</span>
+                      </span>
                     )}
                   </td>
                 )

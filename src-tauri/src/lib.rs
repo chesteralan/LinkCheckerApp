@@ -44,8 +44,24 @@ pub fn run() {
             std::fs::create_dir_all(&app_dir).ok();
 
             let storage = Storage::new(app_dir);
-            storage.migrate_old_history().ok();
+            if let Err(e) = storage.migrate_old_history() {
+                eprintln!("[storage] legacy history migration failed: {}", e);
+            }
             let data = storage.load();
+            // Automatic retention (0 = keep forever); covers run, a11y and
+            // link-check history.
+            if let Err(e) = storage.prune_history(data.max_history_days) {
+                eprintln!("[storage] history retention failed: {}", e);
+            }
+
+            // Single source of truth for the version: tauri.conf.json reads it
+            // from package.json; the title is derived from it here.
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_title(&format!(
+                    "Link Checker v{}",
+                    app.package_info().version
+                ));
+            }
 
             app.manage(AppState {
                 data: Mutex::new(data),
@@ -71,8 +87,9 @@ pub fn run() {
             commands::audits::delete_audit,
             commands::runs::run_audit,
             commands::runs::cancel_run,
-            commands::runs::write_file,
-            commands::runs::read_file,
+            commands::files::save_text_file,
+            commands::files::open_text_file,
+            commands::files::get_storage_warnings,
             commands::runs::list_all_runs,
             commands::runs::list_run_files,
             commands::runs::list_audit_runs,
@@ -81,11 +98,13 @@ pub fn run() {
             commands::runs::scrape_selectors,
             commands::runs::quick_run,
             commands::runs::get_data_path,
-            commands::runs::open_data_folder,
+            commands::files::reveal_data_folder,
             commands::runs::clear_history,
             commands::runs::prune_history,
+            commands::runs::get_history_retention,
             commands::runs::set_history_retention,
             commands::runs::check_links,
+            commands::runs::cancel_link_check,
             commands::runs::list_link_check_scans,
             commands::runs::get_link_check_scan,
             commands::runs::delete_link_check_scan,

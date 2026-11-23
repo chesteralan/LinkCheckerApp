@@ -8,32 +8,55 @@ import type { LinkCheckScan } from '@/types'
 export function LinkCheckScanPage() {
   const { scanId } = useParams<{ scanId: string }>()
   const navigate = useNavigate()
-  const [scan, setScan] = useState<LinkCheckScan | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Load state is keyed by scanId so a stale result never shows for a new id.
+  const [loaded, setLoaded] = useState<{ id: string; scan: LinkCheckScan | null; error: string | null } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!scanId) return
+    let active = true
     getLinkCheckScan(scanId)
-      .then(setScan)
-      .catch(() => {})
-      .finally(() => setLoading(false))
+      .then((s) => {
+        if (active) setLoaded({ id: scanId, scan: s, error: null })
+      })
+      .catch((e) => {
+        if (active) setLoaded({ id: scanId, scan: null, error: String(e) })
+      })
+    return () => {
+      active = false
+    }
   }, [scanId])
+
+  const loading = !!scanId && loaded?.id !== scanId
+  const current = loaded && loaded.id === scanId ? loaded : null
+  const scan = current?.scan ?? null
+  const loadError = current?.error ?? null
 
   async function handleDelete() {
     if (!scan) return
-    await deleteLinkCheckScan(scan.id)
-    navigate('/link-checker/history')
+    setConfirmDelete(false)
+    try {
+      await deleteLinkCheckScan(scan.id)
+      navigate('/link-checker/history')
+    } catch (e) {
+      setDeleteError(`Could not delete scan: ${String(e)}`)
+    }
   }
 
   if (loading) {
-    return <div className="text-muted-foreground">Loading...</div>
+    return (
+      <div className="text-muted-foreground" role="status">
+        Loading...
+      </div>
+    )
   }
 
   if (!scan) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4" role="alert">
         <p className="text-muted-foreground">Scan not found.</p>
+        {loadError && <p className="text-sm text-destructive">{loadError}</p>}
         <button onClick={() => navigate('/link-checker/history')} className="text-sm text-primary hover:underline">
           &larr; Back to history
         </button>
@@ -45,22 +68,33 @@ export function LinkCheckScanPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
-          <button onClick={() => navigate('/link-checker/history')} className="text-sm text-primary hover:underline shrink-0">
+          <button
+            onClick={() => navigate('/link-checker/history')}
+            className="text-sm text-primary hover:underline shrink-0"
+          >
             &larr; History
           </button>
           <h2 className="text-2xl font-bold truncate">{scan.url}</h2>
         </div>
-        <button
-          onClick={() => setConfirmDelete(true)}
-          className="text-sm text-destructive hover:underline shrink-0"
-        >
+        <button onClick={() => setConfirmDelete(true)} className="text-sm text-destructive hover:underline shrink-0">
           Delete scan
         </button>
       </div>
 
+      {deleteError && (
+        <div
+          role="alert"
+          className="border border-destructive/40 bg-destructive/5 rounded-lg p-3 text-sm text-destructive"
+        >
+          {deleteError}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
         <span>Scanned {new Date(scan.startedAt).toLocaleString()}</span>
-        <span>Depth: {scan.maxDepth === 0 ? 'page only' : `${scan.maxDepth} level${scan.maxDepth !== 1 ? 's' : ''}`}</span>
+        <span>
+          Depth: {scan.maxDepth === 0 ? 'page only' : `${scan.maxDepth} level${scan.maxDepth !== 1 ? 's' : ''}`}
+        </span>
         <span>{scan.sameOriginOnly ? 'Same origin' : 'All origins'}</span>
         {scan.includeAccessibility && <span>Accessibility: on</span>}
       </div>

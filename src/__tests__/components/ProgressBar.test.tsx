@@ -19,3 +19,12 @@ describe('ProgressBar', () => {
     expect(screen.getByText(/100%/)).toBeInTheDocument()
   })
 })
+
+describe('ProgressBar accessibility', () => {
+  it('exposes a progressbar with current values', () => {
+    render(<ProgressBar checked={4} total={8} />)
+    const bar = screen.getByRole('progressbar', { name: 'URLs checked' })
+    expect(bar).toHaveAttribute('aria-valuenow', '4')
+    expect(bar).toHaveAttribute('aria-valuemax', '8')
+  })
+})

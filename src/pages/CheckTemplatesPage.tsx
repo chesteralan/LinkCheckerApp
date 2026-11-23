@@ -8,7 +8,7 @@ import { findDuplicateTemplates } from '@/utils/detectDuplicates'
 
 export function CheckTemplatesPage() {
   const navigate = useNavigate()
-  const { checkTemplates, loading, createCheckTemplate, updateCheckTemplate, deleteCheckTemplate } = useStore()
+  const { checkTemplates, audits, loading, createCheckTemplate, updateCheckTemplate, deleteCheckTemplate } = useStore()
   const duplicateTemplates = useMemo(() => findDuplicateTemplates(checkTemplates), [checkTemplates])
   const [name, setName] = useState('')
   const [folderName, setFolderName] = useState('')
@@ -17,6 +17,9 @@ export function CheckTemplatesPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [folderFilter, setFolderFilter] = useState('')
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const folders = useMemo(() => {
     const f = new Set<string>()
@@ -38,30 +41,106 @@ export function CheckTemplatesPage() {
     setShowForm(true)
   }
 
+  const visibleTemplates = useMemo(
+    () =>
+      [...checkTemplates]
+        .filter((t) => !folderFilter || t.folder === folderFilter)
+        .sort((a, b) => Number(b.pinned) - Number(a.pinned)),
+    [checkTemplates, folderFilter],
+  )
+  // Bulk actions only touch selected templates that are still visible (A-29).
+  const selectedVisible = visibleTemplates.filter((t) => selectedIds.has(t.id))
+
+  function changeFolderFilter(f: string) {
+    setFolderFilter(f)
+    setSelectedIds(new Set())
+  }
+
+  /** Names of audits that use any of the given templates. */
+  function auditsUsing(ids: string[]): string[] {
+    return audits.filter((a) => ids.includes(a.checkTemplateId)).map((a) => a.name)
+  }
+
+  function deleteMessage(ids: string[], what: string): string {
+    const using = auditsUsing(ids)
+    const base = `Delete ${what}? This action cannot be undone.`
+    return using.length > 0
+      ? `${base} It is used by ${using.length} audit${using.length === 1 ? '' : 's'} (${using.join(', ')}); delete or change those audits first.`
+      : base
+  }
+
   async function handleSave() {
-    if (!name.trim()) return
-    if (editingRename) {
-      await updateCheckTemplate(editingRename.id, { name: name.trim(), folder: folderName || null })
-      resetForm()
-    } else {
-      const created = await createCheckTemplate(name.trim(), [], folderName || undefined)
-      resetForm()
-      navigate(`/check-templates/${created.id}`)
+    if (!name.trim() || saving) return
+    setSaving(true)
+    setError(null)
+    try {
+      if (editingRename) {
+        await updateCheckTemplate(editingRename.id, { name: name.trim(), folder: folderName.trim() || null })
+        resetForm()
+      } else {
+        const created = await createCheckTemplate(name.trim(), [], folderName.trim() || undefined)
+        resetForm()
+        navigate(`/check-templates/${created.id}`)
+      }
+    } catch (e) {
+      setError(`Could not save the template: ${String(e)}`)
+    } finally {
+      setSaving(false)
     }
   }
 
   async function handleDeleteConfirm() {
     if (!confirmDeleteId) return
-    await deleteCheckTemplate(confirmDeleteId)
+    const id = confirmDeleteId
     setConfirmDeleteId(null)
+    setError(null)
+    try {
+      await deleteCheckTemplate(id)
+    } catch (e) {
+      // e.g. "This check template is used by N audit(s): ..."
+      setError(String(e))
+    }
+  }
+
+  async function handleBulkDelete() {
+    setConfirmBulkDelete(false)
+    setError(null)
+    const failures: string[] = []
+    for (const t of selectedVisible) {
+      try {
+        await deleteCheckTemplate(t.id)
+      } catch (e) {
+        failures.push(`${t.name}: ${String(e)}`)
+      }
+    }
+    setSelectedIds(new Set())
+    if (failures.length > 0) setError(`Some templates could not be deleted. ${failures.join(' ')}`)
+  }
+
+  async function handleBulkDuplicate() {
+    setError(null)
+    try {
+      for (const t of selectedVisible) {
+        await createCheckTemplate(t.name + ' (copy)', t.checks, t.folder ?? undefined)
+      }
+      setSelectedIds(new Set())
+    } catch (e) {
+      setError(`Could not duplicate templates: ${String(e)}`)
+    }
+  }
+
+  async function togglePin(id: string, pinned: boolean) {
+    setError(null)
+    try {
+      await updateCheckTemplate(id, { pinned: !pinned })
+    } catch (e) {
+      setError(`Could not update the template: ${String(e)}`)
+    }
   }
 
   useHotkeys(
     {
-      'Cmd+Enter': () => {
-        if (showForm) handleSave()
-      },
-      'Ctrl+Enter': () => {
+      'Mod+Enter': () => {
         if (showForm) handleSave()
       },
     },
@@ -87,26 +166,23 @@ export function CheckTemplatesPage() {
         </button>
       </div>
 
-      {selectedIds.size > 0 && (
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+
+      {selectedVisible.length > 0 && (
         <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-md text-sm">
-          <span className="text-muted-foreground">{selectedIds.size} selected</span>
+          <span className="text-muted-foreground">{selectedVisible.length} selected</span>
           <button
-            onClick={async () => {
-              for (const id of selectedIds) await deleteCheckTemplate(id)
-              setSelectedIds(new Set())
-            }}
+            onClick={() => setConfirmBulkDelete(true)}
             className="ml-auto px-3 py-1 text-xs border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
           >
             Delete Selected
           </button>
           <button
-            onClick={async () => {
-              for (const id of selectedIds) {
-                const t = checkTemplates.find((ct) => ct.id === id)
-                if (t) await createCheckTemplate(t.name + ' (copy)', t.checks)
-              }
-              setSelectedIds(new Set())
-            }}
+            onClick={handleBulkDuplicate}
             className="px-3 py-1 text-xs border border-border rounded-md hover:bg-muted transition-colors"
           >
             Duplicate Selected
@@ -122,14 +198,16 @@ export function CheckTemplatesPage() {
           <input
             type="text"
             placeholder="Template name"
+            aria-label="Template name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoFocus
             className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
           />
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">Folder</label>
+            <label htmlFor="ct-folder-input" className="text-sm text-muted-foreground block mb-1">Folder</label>
             <input
+              id="ct-folder-input"
               type="text"
               placeholder="e.g. Production, Staging"
               value={folderName}
@@ -144,7 +222,7 @@ export function CheckTemplatesPage() {
           <div className="flex gap-2">
             <button
               onClick={handleSave}
-              disabled={!name.trim()}
+              disabled={!name.trim() || saving}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               {editingRename ? 'Save' : 'Create'}
@@ -161,11 +239,11 @@ export function CheckTemplatesPage() {
 
       {folders.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          <button onClick={() => setFolderFilter('')} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${!folderFilter ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+          <button onClick={() => changeFolderFilter('')} aria-pressed={!folderFilter} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${!folderFilter ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
             All
           </button>
           {folders.map((f) => (
-            <button key={f} onClick={() => setFolderFilter(f)} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${folderFilter === f ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+            <button key={f} onClick={() => changeFolderFilter(f)} aria-pressed={folderFilter === f} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${folderFilter === f ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
               {f}
             </button>
           ))}
@@ -177,10 +255,7 @@ export function CheckTemplatesPage() {
       )}
 
       <div className="space-y-2">
-        {[...checkTemplates]
-          .filter((t) => !folderFilter || t.folder === folderFilter)
-          .sort((a, b) => Number(b.pinned) - Number(a.pinned))
-          .map((template) => (
+        {visibleTemplates.map((template) => (
           <div key={template.id} className="border border-border rounded-lg p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <input
@@ -192,14 +267,17 @@ export function CheckTemplatesPage() {
                   else next.add(template.id)
                   setSelectedIds(next)
                 }}
+                aria-label={`Select ${template.name}`}
                 className="accent-primary"
               />
               <button
-                onClick={() => updateCheckTemplate(template.id, { pinned: !template.pinned })}
+                onClick={() => togglePin(template.id, template.pinned)}
                 className="text-sm hover:scale-110 transition-transform"
                 title={template.pinned ? 'Unpin' : 'Pin'}
+                aria-label={template.pinned ? `Unpin ${template.name}` : `Pin ${template.name}`}
+                aria-pressed={template.pinned}
               >
-                {template.pinned ? '★' : '☆'}
+                <span aria-hidden="true">{template.pinned ? '★' : '☆'}</span>
               </button>
               <div>
                 <button
@@ -239,19 +317,19 @@ export function CheckTemplatesPage() {
                 onClick={() => openRename(template)}
                 className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
               >
-                Edit
+                Edit<span className="sr-only"> {template.name}</span>
               </button>
               <button
                 onClick={() => navigate(`/check-templates/${template.id}`)}
                 className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
               >
-                Selectors
+                Selectors<span className="sr-only"> of {template.name}</span>
               </button>
               <button
                 onClick={() => setConfirmDeleteId(template.id)}
                 className="px-3 py-1.5 text-sm border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
               >
-                Delete
+                Delete<span className="sr-only"> {template.name}</span>
               </button>
             </div>
           </div>
@@ -260,9 +338,20 @@ export function CheckTemplatesPage() {
 
       <ConfirmDialog
         open={!!confirmDeleteId}
-        message="Delete this template? This action cannot be undone."
+        message={confirmDeleteId ? deleteMessage([confirmDeleteId], 'this template') : ''}
         onConfirm={handleDeleteConfirm}
         onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title="Delete Templates"
+        message={deleteMessage(
+          selectedVisible.map((t) => t.id),
+          `${selectedVisible.length} template${selectedVisible.length === 1 ? '' : 's'} (${selectedVisible.map((t) => t.name).join(', ')})`,
+        )}
+        onConfirm={handleBulkDelete}
+        onCancel={() => setConfirmBulkDelete(false)}
       />
     </div>
   )

@@ -4,39 +4,61 @@ use scraper::{ElementRef, Html, Selector};
 
 use crate::models::{A11yCheckConfig, A11yIssue};
 
-const WCAG_DOCS: &str = "https://www.w3.org/WAI/WCAG21/Understanding";
+const WCAG_DOCS: &str = "https://www.w3.org/WAI/WCAG22/Understanding";
 
+/// Marker passed as the `wcag` argument for heuristic rules that are not
+/// WCAG success-criterion failures. Such issues carry an empty `wcag` field and
+/// the `best-practice` standard tag (same tag axe-core uses), so the
+/// "bestpractice" standard selection can include/exclude them.
+const BEST_PRACTICE: &str = "";
+const BEST_PRACTICE_TAG: &str = "best-practice";
+
+// WAI-ARIA 1.2 roles (plus the Graphics ARIA module). Abstract roles are
+// intentionally excluded since authors must not use them.
 const VALID_ROLES: &[&str] = &[
     "alert",
     "alertdialog",
     "application",
     "article",
     "banner",
+    "blockquote",
     "button",
+    "caption",
     "cell",
     "checkbox",
+    "code",
     "columnheader",
     "combobox",
+    "comment",
     "complementary",
     "contentinfo",
     "definition",
+    "deletion",
     "dialog",
     "directory",
     "document",
+    "emphasis",
     "feed",
     "figure",
     "form",
+    "generic",
+    "graphics-document",
+    "graphics-object",
+    "graphics-symbol",
     "grid",
     "gridcell",
     "group",
     "heading",
+    "image",
     "img",
+    "insertion",
     "link",
     "list",
     "listbox",
     "listitem",
     "log",
     "main",
+    "mark",
     "marquee",
     "math",
     "menu",
@@ -44,10 +66,12 @@ const VALID_ROLES: &[&str] = &[
     "menuitem",
     "menuitemcheckbox",
     "menuitemradio",
+    "meter",
     "navigation",
     "none",
     "note",
     "option",
+    "paragraph",
     "presentation",
     "progressbar",
     "radio",
@@ -63,6 +87,10 @@ const VALID_ROLES: &[&str] = &[
     "slider",
     "spinbutton",
     "status",
+    "strong",
+    "subscript",
+    "suggestion",
+    "superscript",
     "switch",
     "tab",
     "table",
@@ -70,6 +98,7 @@ const VALID_ROLES: &[&str] = &[
     "tabpanel",
     "term",
     "textbox",
+    "time",
     "timer",
     "toolbar",
     "tooltip",
@@ -77,6 +106,119 @@ const VALID_ROLES: &[&str] = &[
     "treegrid",
     "treeitem",
 ];
+
+// DPUB-ARIA 1.1 roles
+const DPUB_ROLES: &[&str] = &[
+    "doc-abstract",
+    "doc-acknowledgments",
+    "doc-afterword",
+    "doc-appendix",
+    "doc-backlink",
+    "doc-biblioentry",
+    "doc-bibliography",
+    "doc-biblioref",
+    "doc-chapter",
+    "doc-colophon",
+    "doc-conclusion",
+    "doc-cover",
+    "doc-credit",
+    "doc-credits",
+    "doc-dedication",
+    "doc-endnote",
+    "doc-endnotes",
+    "doc-epigraph",
+    "doc-epilogue",
+    "doc-errata",
+    "doc-example",
+    "doc-footnote",
+    "doc-foreword",
+    "doc-glossary",
+    "doc-glossref",
+    "doc-index",
+    "doc-introduction",
+    "doc-noteref",
+    "doc-notice",
+    "doc-pagebreak",
+    "doc-pagefooter",
+    "doc-pageheader",
+    "doc-pagelist",
+    "doc-part",
+    "doc-preface",
+    "doc-prologue",
+    "doc-pullquote",
+    "doc-qna",
+    "doc-subtitle",
+    "doc-tip",
+    "doc-toc",
+];
+
+fn is_valid_role(token: &str) -> bool {
+    let t = token.to_ascii_lowercase();
+    VALID_ROLES.contains(&t.as_str()) || DPUB_ROLES.contains(&t.as_str())
+}
+
+/// A role attribute is a space-separated fallback list; the browser uses the
+/// first token it recognises, so it is only invalid when no token is valid.
+/// An empty/whitespace-only attribute is ignored.
+fn role_attr_is_invalid(role: &str) -> bool {
+    let mut tokens = role.split_whitespace().peekable();
+    tokens.peek().is_some() && !tokens.any(is_valid_role)
+}
+
+/// True when the viewport meta `content` blocks pinch-zoom (WCAG 1.4.4):
+/// `user-scalable=no|0` or `maximum-scale` < 2. Viewport properties are
+/// comma-separated, though `;` is accepted too since it appears in the wild.
+fn viewport_blocks_zoom(content: &str) -> bool {
+    let c = content.to_lowercase().replace(char::is_whitespace, "");
+    c.split([',', ';']).any(|part| {
+        let Some((key, value)) = part.split_once('=') else {
+            return false;
+        };
+        match key {
+            "user-scalable" => matches!(value, "no" | "0"),
+            "maximum-scale" => value.parse::<f32>().map(|v| v < 2.0).unwrap_or(false),
+            _ => false,
+        }
+    })
+}
+
+/// WCAG Understanding document slug for a success criterion.
+fn understanding_slug(sc: &str) -> Option<&'static str> {
+    Some(match sc {
+        "1.1.1" => "non-text-content",
+        "1.2.2" => "captions-prerecorded",
+        "1.3.1" => "info-and-relationships",
+        "1.3.5" => "identify-input-purpose",
+        "1.4.4" => "resize-text",
+        "2.1.1" => "keyboard",
+        "2.2.1" => "timing-adjustable",
+        "2.2.2" => "pause-stop-hide",
+        "2.4.1" => "bypass-blocks",
+        "2.4.2" => "page-titled",
+        "2.4.3" => "focus-order",
+        "2.4.4" => "link-purpose-in-context",
+        "3.1.1" => "language-of-page",
+        "3.1.4" => "abbreviations",
+        "3.2.1" => "on-focus",
+        "3.2.5" => "change-on-request",
+        "3.3.2" => "labels-or-instructions",
+        "4.1.1" => "parsing",
+        "4.1.2" => "name-role-value",
+        _ => return None,
+    })
+}
+
+fn help_url_for(wcag: &str) -> Option<String> {
+    understanding_slug(wcag).map(|slug| format!("{}/{}.html", WCAG_DOCS, slug))
+}
+
+fn standards_for(wcag: &str) -> Vec<String> {
+    if wcag.is_empty() {
+        vec![BEST_PRACTICE_TAG.into()]
+    } else {
+        vec!["wcag".into()]
+    }
+}
 
 pub fn run_a11y_scan(html: &str, config: &A11yCheckConfig) -> Vec<A11yIssue> {
     let document = Html::parse_document(html);
@@ -125,9 +267,18 @@ pub fn run_a11y_scan(html: &str, config: &A11yCheckConfig) -> Vec<A11yIssue> {
             }
         }
         let include_non_wcag = config.standards.iter().any(|s| s == "bestpractice");
+        // 4.1.1 Parsing was removed in WCAG 2.2 — keep it only when some other
+        // selected standard (2.0/2.1/508/EN 301 549) still includes it.
+        let include_parsing = config
+            .standards
+            .iter()
+            .any(|s| s != "wcag22" && !standard_wcag_versions(s).is_empty());
         issues.retain(|i| {
             if i.wcag.is_empty() {
                 return include_non_wcag;
+            }
+            if i.wcag == "4.1.1" && !include_parsing {
+                return false;
             }
             allowed.contains(&wcag_criterion_version(&i.wcag))
         });
@@ -193,8 +344,8 @@ fn issue(
         message: message.into(),
         severity: severity.into(),
         wcag: wcag.into(),
-        standards: vec!["wcag".into()],
-        help_url: Some(format!("{}/{}", WCAG_DOCS, wcag)),
+        standards: standards_for(wcag),
+        help_url: help_url_for(wcag),
     }
 }
 
@@ -213,8 +364,8 @@ fn issue_raw(
         message: message.into(),
         severity: severity.into(),
         wcag: wcag.into(),
-        standards: vec!["wcag".into()],
-        help_url: Some(format!("{}/{}", WCAG_DOCS, wcag)),
+        standards: standards_for(wcag),
+        help_url: help_url_for(wcag),
     }
 }
 
@@ -288,20 +439,13 @@ fn check_document(document: &Html, issues: &mut Vec<A11yIssue>) {
     if let Some(sel) = select(document, "meta[name='viewport']") {
         for meta in document.select(&sel) {
             if let Some(content) = meta.value().attr("content") {
-                let c = content.to_lowercase().replace(' ', "");
-                let zoom_locked = c.contains("user-scalable=no")
-                    || c.split(';')
-                        .find_map(|p| p.strip_prefix("maximum-scale="))
-                        .and_then(|v| v.parse::<f32>().ok())
-                        .map(|v| v < 2.0)
-                        .unwrap_or(false);
-                if zoom_locked {
+                if viewport_blocks_zoom(content) {
                     issues.push(issue(
                         "viewport-zoom",
                         "moderate",
                         "1.4.4",
                         &meta,
-                        "Viewport meta tag prevents user zoom (user-scalable=no or maximum-scale < 2)",
+                        "Viewport meta tag prevents user zoom (user-scalable=no/0 or maximum-scale < 2)",
                     ));
                 }
             }
@@ -318,7 +462,7 @@ fn check_document(document: &Html, issues: &mut Vec<A11yIssue>) {
         issues.push(issue_raw(
             "missing-charset",
             "minor",
-            "4.1.1",
+            BEST_PRACTICE,
             "document",
             "head",
             "Document is missing a charset declaration",
@@ -386,7 +530,7 @@ fn check_headings(document: &Html, issues: &mut Vec<A11yIssue>) {
         issues.push(issue_raw(
             "no-headings",
             "minor",
-            "1.3.1",
+            BEST_PRACTICE,
             "body",
             "body",
             "Page has no heading elements (h1–h6)",
@@ -399,7 +543,7 @@ fn check_headings(document: &Html, issues: &mut Vec<A11yIssue>) {
         issues.push(issue(
             "missing-h1",
             "minor",
-            "1.3.1",
+            BEST_PRACTICE,
             &headings[0],
             "Page has no h1 heading",
         ));
@@ -407,7 +551,7 @@ fn check_headings(document: &Html, issues: &mut Vec<A11yIssue>) {
         issues.push(issue(
             "multiple-h1",
             "minor",
-            "1.3.1",
+            BEST_PRACTICE,
             &headings[0],
             &format!("Page has {} h1 headings", h1_count),
         ));
@@ -421,7 +565,7 @@ fn check_headings(document: &Html, issues: &mut Vec<A11yIssue>) {
             issues.push(issue(
                 "empty-heading",
                 "minor",
-                "1.3.1",
+                BEST_PRACTICE,
                 h,
                 &format!("<h{}> has no text content", level),
             ));
@@ -430,7 +574,7 @@ fn check_headings(document: &Html, issues: &mut Vec<A11yIssue>) {
             issues.push(issue(
                 "heading-skip",
                 "moderate",
-                "1.3.1",
+                BEST_PRACTICE,
                 h,
                 &format!("Heading level jumps from h{} to h{}", prev_level, level),
             ));
@@ -450,7 +594,7 @@ fn check_landmarks(document: &Html, issues: &mut Vec<A11yIssue>) {
         issues.push(issue_raw(
             "missing-main",
             "moderate",
-            "1.3.1",
+            BEST_PRACTICE,
             "body",
             "body",
             "Page has no <main> landmark or role=\"main\" element",
@@ -483,7 +627,7 @@ fn check_landmarks(document: &Html, issues: &mut Vec<A11yIssue>) {
         issues.push(issue_raw(
             "missing-navigation",
             "minor",
-            "1.3.1",
+            BEST_PRACTICE,
             "body",
             "body",
             "Page has no navigation landmark",
@@ -497,7 +641,7 @@ fn check_landmarks(document: &Html, issues: &mut Vec<A11yIssue>) {
         issues.push(issue_raw(
             "missing-contentinfo",
             "minor",
-            "1.3.1",
+            BEST_PRACTICE,
             "body",
             "body",
             "Page has no contentinfo (footer) landmark",
@@ -520,7 +664,7 @@ fn check_landmarks(document: &Html, issues: &mut Vec<A11yIssue>) {
                     issues.push(issue(
                         "unnamed-duplicate-landmark",
                         "moderate",
-                        "1.3.1",
+                        BEST_PRACTICE,
                         nav,
                         "Multiple navigation landmarks exist but this one has no accessible name",
                     ));
@@ -590,8 +734,7 @@ fn check_aria(document: &Html, issues: &mut Vec<A11yIssue>) {
     if let Some(sel) = select(document, "[role]") {
         for el in document.select(&sel) {
             if let Some(role) = el.value().attr("role") {
-                let first = role.split_whitespace().next().unwrap_or("");
-                if !VALID_ROLES.contains(&first) {
+                if role_attr_is_invalid(role) {
                     issues.push(issue(
                         "invalid-role",
                         "moderate",
@@ -634,7 +777,7 @@ fn check_aria(document: &Html, issues: &mut Vec<A11yIssue>) {
             issues.push(issue(
                 "aria-expanded-no-controls",
                 "minor",
-                "4.1.2",
+                BEST_PRACTICE,
                 el,
                 "aria-expanded is set without aria-controls referencing the controlled region",
             ));
@@ -662,14 +805,39 @@ fn check_aria(document: &Html, issues: &mut Vec<A11yIssue>) {
         }
     });
 
-    // aria-label on generic elements (no role) is ignored by AT
+    // aria-label on elements whose implicit role is generic or prohibits
+    // naming (no explicit role) is ignored by AT. Elements such as section,
+    // table, ul/ol/li, tr/td have roles that support naming, so they are
+    // deliberately not listed.
     each(document, "[aria-label]", |el| {
         if el.value().attr("role").is_some() {
             return;
         }
         if matches!(
             el.value().name(),
-            "div" | "span" | "p" | "ul" | "ol" | "li" | "td" | "tr" | "table" | "br" | "section"
+            "div"
+                | "span"
+                | "p"
+                | "br"
+                | "b"
+                | "i"
+                | "u"
+                | "s"
+                | "em"
+                | "strong"
+                | "small"
+                | "code"
+                | "pre"
+                | "sub"
+                | "sup"
+                | "mark"
+                | "del"
+                | "ins"
+                | "q"
+                | "data"
+                | "time"
+                | "bdi"
+                | "bdo"
         ) {
             issues.push(issue(
                 "aria-label-generic",
@@ -744,7 +912,7 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
         Some("") => issues.push(issue(
             "empty-alt",
             "minor",
-            "1.1.1",
+            BEST_PRACTICE,
             img,
             "Image has empty alt text (ok only if decorative)",
         )),
@@ -753,20 +921,40 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
 
     // Links
     each(document, "a", |a| {
-        let href = a.value().attr("href").unwrap_or("");
+        let v = a.value();
+        let Some(href) = v.attr("href").map(str::trim) else {
+            // <a> without href is a placeholder/named anchor, not a link —
+            // only flag it when it is made to behave like one.
+            let acts_as_link = v
+                .attr("role")
+                .map(|r| r.split_whitespace().any(|t| t.eq_ignore_ascii_case("link")))
+                .unwrap_or(false)
+                || v.attr("onclick").is_some()
+                || v.attr("tabindex").is_some();
+            if acts_as_link {
+                issues.push(issue(
+                    "empty-link",
+                    "serious",
+                    "2.4.4",
+                    a,
+                    "Element acts as a link (role/onclick/tabindex) but has no href",
+                ));
+            }
+            return;
+        };
         if href.is_empty() {
             issues.push(issue(
                 "empty-link",
                 "serious",
                 "2.4.4",
                 a,
-                "Link has no href or empty href",
+                "Link has an empty href",
             ));
         } else if href == "#" || href.starts_with("javascript:") {
             issues.push(issue(
                 "placeholder-link",
                 "moderate",
-                "2.4.4",
+                BEST_PRACTICE,
                 a,
                 &format!("Link href is a placeholder (\"{}\")", href),
             ));
@@ -793,7 +981,7 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
                 issues.push(issue(
                     "positive-tabindex",
                     "moderate",
-                    "2.4.3",
+                    BEST_PRACTICE,
                     el,
                     &format!(
                         "Element has tabindex=\"{}\" which disrupts natural tab order",
@@ -809,7 +997,7 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
         issues.push(issue(
             "autofocus",
             "minor",
-            "3.2.1",
+            BEST_PRACTICE,
             el,
             "Element uses autofocus which can disorient screen-reader users",
         ));
@@ -846,7 +1034,7 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
             issues.push(issue(
                 "target-blank-noopener",
                 "minor",
-                "3.2.5",
+                BEST_PRACTICE,
                 a,
                 "Link opens in a new tab without rel=\"noopener\"",
             ));
@@ -894,7 +1082,7 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
             issues.push(issue(
                 "tabindex-neg-focusable",
                 "moderate",
-                "2.1.1",
+                BEST_PRACTICE,
                 el,
                 &format!(
                     "<{}> is naturally focusable but tabindex=\"-1\" removes it from tab order",
@@ -969,7 +1157,7 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
             issues.push(issue(
                 "redundant-role",
                 "minor",
-                "4.1.2",
+                BEST_PRACTICE,
                 el,
                 &format!(
                     "role=\"{}\" duplicates the implicit semantics of <{}>",
@@ -1090,7 +1278,7 @@ fn check_tables(document: &Html, issues: &mut Vec<A11yIssue>) {
                 issues.push(issue(
                     "th-no-scope",
                     "minor",
-                    "1.3.1",
+                    BEST_PRACTICE,
                     &th,
                     "<th> has no scope, headers, or id attribute",
                 ));
@@ -1218,7 +1406,7 @@ fn check_forms(document: &Html, issues: &mut Vec<A11yIssue>) {
                 issues.push(issue(
                     "radio-no-legend",
                     "minor",
-                    "1.3.1",
+                    BEST_PRACTICE,
                     members[0],
                     &format!(
                         "Radio group \"{}\" is not grouped in a <fieldset> with <legend>",
@@ -1327,7 +1515,7 @@ mod tests {
 
     #[test]
     fn interactive_issues() {
-        let html = r##"<html lang="en"><head><title>t</title></head><body><img src="x.png"><a>no href</a><a href="#">hash</a><button></button><div tabindex="3"></div><input autofocus></body></html>"##;
+        let html = r##"<html lang="en"><head><title>t</title></head><body><img src="x.png"><a href="">empty</a><a href="#">hash</a><button></button><div tabindex="3"></div><input autofocus></body></html>"##;
         let issues = run_a11y_scan(html, &config());
         let t = types(&issues);
         assert!(t.contains(&"missing-alt"));
@@ -1415,10 +1603,22 @@ mod tests {
         }
         // email input with no label should also flag missing-label
         assert!(t.contains(&"missing-label"));
-        // standards metadata populated
-        assert!(issues
-            .iter()
-            .all(|i| i.standards.contains(&"wcag".to_string())));
+        // standards metadata populated: WCAG rules carry an SC + "wcag",
+        // heuristic rules carry no SC + "best-practice"
+        assert!(issues.iter().all(|i| {
+            if i.wcag.is_empty() {
+                i.standards == vec!["best-practice".to_string()] && i.help_url.is_none()
+            } else {
+                i.standards == vec!["wcag".to_string()]
+                    && i.help_url
+                        .as_deref()
+                        .map(|u| {
+                            u.starts_with("https://www.w3.org/WAI/WCAG22/Understanding/")
+                                && u.ends_with(".html")
+                        })
+                        .unwrap_or(false)
+            }
+        }));
     }
 
     #[test]
@@ -1486,9 +1686,19 @@ mod tests {
         assert!(t.contains(&"missing-autocomplete"));
         assert!(t.contains(&"abbr-no-title"));
 
-        // bestpractice only -> static engine emits no non-WCAG issues
+        // bestpractice only -> only heuristic (non-WCAG) rules
         cfg.standards = vec!["bestpractice".into()];
-        assert!(run_a11y_scan(html, &cfg).is_empty());
+        let issues = run_a11y_scan(html, &cfg);
+        assert!(!issues.is_empty());
+        assert!(issues.iter().all(|i| i.wcag.is_empty()));
+        let t = types(&issues);
+        assert!(t.contains(&"missing-main"));
+        assert!(t.contains(&"no-headings"));
+        assert!(!t.contains(&"meta-refresh"));
+
+        // WCAG-only selections exclude best-practice rules
+        cfg.standards = vec!["wcag21".into()];
+        assert!(run_a11y_scan(html, &cfg).iter().all(|i| !i.wcag.is_empty()));
     }
 
     #[test]
@@ -1527,5 +1737,136 @@ mod tests {
         // non-focusable presentation is fine
         let html2 = r#"<html lang="en"><head><title>t</title></head><body><div role="presentation"><span>decor</span></div></body></html>"#;
         assert!(!types(&run_a11y_scan(html2, &config())).contains(&"presentation-focusable"));
+    }
+
+    #[test]
+    fn viewport_zoom_detection() {
+        // A-13: comma-separated maximum-scale must be detected
+        assert!(viewport_blocks_zoom("width=device-width,maximum-scale=1"));
+        assert!(viewport_blocks_zoom(
+            "width=device-width, initial-scale=1, maximum-scale=1.0"
+        ));
+        assert!(viewport_blocks_zoom("width=device-width; maximum-scale=1"));
+        assert!(viewport_blocks_zoom("width=device-width, user-scalable=no"));
+        assert!(viewport_blocks_zoom("width=device-width, user-scalable=0"));
+        assert!(!viewport_blocks_zoom("width=device-width, initial-scale=1"));
+        assert!(!viewport_blocks_zoom("width=device-width, maximum-scale=5"));
+        assert!(!viewport_blocks_zoom(
+            "width=device-width, user-scalable=yes"
+        ));
+
+        let html = r#"<html lang="en"><head><title>t</title><meta name="viewport" content="width=device-width,maximum-scale=1"></head><body></body></html>"#;
+        assert!(types(&run_a11y_scan(html, &config())).contains(&"viewport-zoom"));
+    }
+
+    #[test]
+    fn aria_label_generic_only_on_generic_elements() {
+        // A-47: elements whose roles support naming must not be flagged
+        let html = r#"<html lang="en"><head><title>t</title></head><body>
+            <section aria-label="s">x</section>
+            <table aria-label="t"><tr aria-label="r"><td aria-label="c">1</td></tr></table>
+            <ul aria-label="u"><li aria-label="l">x</li></ul>
+            <ol aria-label="o"><li>x</li></ol>
+        </body></html>"#;
+        assert!(!types(&run_a11y_scan(html, &config())).contains(&"aria-label-generic"));
+
+        let html2 = r#"<html lang="en"><head><title>t</title></head><body><div aria-label="d">x</div><p aria-label="p">y</p></body></html>"#;
+        let issues = run_a11y_scan(html2, &config());
+        assert_eq!(
+            issues
+                .iter()
+                .filter(|i| i.issue_type == "aria-label-generic")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn roles_aria12_dpub_and_fallback_lists() {
+        // A-48
+        let ok = r#"<html lang="en"><head><title>t</title></head><body>
+            <div role="generic">a</div><div role="meter">b</div><div role="paragraph">c</div>
+            <div role="time">d</div><section role="doc-chapter">e</section>
+            <div role="doc-toc">f</div><div role="bogus region">g</div>
+            <div role="  ">h</div><div role="Button" tabindex="0">i</div>
+        </body></html>"#;
+        assert!(!types(&run_a11y_scan(ok, &config())).contains(&"invalid-role"));
+
+        let bad = r#"<html lang="en"><head><title>t</title></head><body><div role="bogus nonsense">x</div><div role="doc-nope">y</div></body></html>"#;
+        let issues = run_a11y_scan(bad, &config());
+        assert_eq!(
+            issues
+                .iter()
+                .filter(|i| i.issue_type == "invalid-role")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn empty_link_ignores_named_anchors() {
+        // A-49
+        let html = r#"<html lang="en"><head><title>t</title></head><body><a name="top"></a><a id="x">anchor</a></body></html>"#;
+        assert!(!types(&run_a11y_scan(html, &config())).contains(&"empty-link"));
+
+        for markup in [
+            r#"<a href="">e</a>"#,
+            r#"<a href="  ">e</a>"#,
+            r#"<a role="link">e</a>"#,
+            r#"<a onclick="go()">e</a>"#,
+            r#"<a tabindex="0">e</a>"#,
+        ] {
+            let html = format!(
+                r#"<html lang="en"><head><title>t</title></head><body>{}</body></html>"#,
+                markup
+            );
+            assert!(
+                types(&run_a11y_scan(&html, &config())).contains(&"empty-link"),
+                "expected empty-link for {}",
+                markup
+            );
+        }
+    }
+
+    #[test]
+    fn best_practice_classification_and_help_urls() {
+        // A-51
+        let html = r##"<html lang="en"><head><title>t</title></head><body>
+            <h2>no h1</h2>
+            <a href="https://x.com" target="_blank">ext</a>
+            <nav role="navigation"><a href="/a">A</a></nav>
+            <img src="a.png">
+        </body></html>"##;
+        let issues = run_a11y_scan(html, &config());
+        for bp in ["missing-h1", "target-blank-noopener", "redundant-role"] {
+            let i = issues
+                .iter()
+                .find(|i| i.issue_type == bp)
+                .unwrap_or_else(|| panic!("missing {}", bp));
+            assert!(i.wcag.is_empty(), "{} should not carry a WCAG SC", bp);
+            assert_eq!(i.standards, vec!["best-practice".to_string()]);
+        }
+        let alt = issues
+            .iter()
+            .find(|i| i.issue_type == "missing-alt")
+            .unwrap();
+        assert_eq!(alt.wcag, "1.1.1");
+        assert_eq!(
+            alt.help_url.as_deref(),
+            Some("https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html")
+        );
+    }
+
+    #[test]
+    fn parsing_criterion_dropped_for_wcag22_only() {
+        // A-51: 4.1.1 was removed in WCAG 2.2
+        let html = r#"<html lang="en"><head><title>t</title></head><body><div id="a"></div><div id="a"></div></body></html>"#;
+        let mut cfg = config();
+        cfg.standards = vec!["wcag22".into()];
+        assert!(!types(&run_a11y_scan(html, &cfg)).contains(&"duplicate-id"));
+        cfg.standards = vec!["wcag21".into()];
+        assert!(types(&run_a11y_scan(html, &cfg)).contains(&"duplicate-id"));
+        cfg.standards = vec!["wcag22".into(), "section508".into()];
+        assert!(types(&run_a11y_scan(html, &cfg)).contains(&"duplicate-id"));
     }
 }

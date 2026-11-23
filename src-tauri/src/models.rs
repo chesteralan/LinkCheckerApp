@@ -23,6 +23,8 @@ pub enum CheckType {
     Regex,
     Attribute,
     Accessibility,
+    // The frontend uses `"javascript"`; older builds wrote `"javaScript"`.
+    #[serde(rename = "javascript", alias = "javaScript")]
     JavaScript,
 }
 
@@ -81,7 +83,7 @@ pub struct CheckTemplate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct AuditConfig {
     pub mode: String,
     pub batch_size: u32,
@@ -117,6 +119,7 @@ pub struct Audit {
     pub name: String,
     pub target_list_id: String,
     pub check_template_id: String,
+    #[serde(default)]
     pub config: AuditConfig,
     pub origin_override: Option<String>,
     pub url_postfix: Option<String>,
@@ -171,7 +174,7 @@ pub struct PageResult {
     pub checks: Vec<SelectorResult>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RunSummary {
     pub total: usize,
@@ -187,8 +190,11 @@ pub struct A11yAudit {
     pub id: String,
     pub name: String,
     pub target_list_id: String,
+    #[serde(default = "default_a11y_engine")]
     pub engine: String,
+    #[serde(default)]
     pub a11y_config: A11yCheckConfig,
+    #[serde(default)]
     pub config: AuditConfig,
     pub origin_override: Option<String>,
     pub url_postfix: Option<String>,
@@ -208,6 +214,10 @@ pub struct A11yPageResult {
     pub response_time_ms: Option<u64>,
     pub error: Option<String>,
     pub issues: Vec<A11yIssue>,
+    /// True when the engine capped the issue list (per-rule node limit or
+    /// the per-page total), so `issues` is incomplete.
+    #[serde(default)]
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -231,9 +241,21 @@ pub struct A11yReport {
     pub completed_at: Option<String>,
     pub status: String,
     pub results: Vec<A11yPageResult>,
+    #[serde(default)]
     pub summary: A11ySummary,
     #[serde(default)]
     pub standards: Vec<String>,
+    /// Engine used for this report ("static" | "axe-core"). None on reports
+    /// written before this field existed.
+    #[serde(default)]
+    pub engine: Option<String>,
+    /// Minimum severity the report was scanned with (None on legacy reports).
+    #[serde(default)]
+    pub min_severity: Option<String>,
+    /// Rule categories the report was scanned with (None on legacy reports;
+    /// empty = all).
+    #[serde(default)]
+    pub categories: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,22 +276,39 @@ pub struct AuditRun {
     pub completed_at: Option<String>,
     pub status: String,
     pub results: Vec<PageResult>,
+    #[serde(default)]
     pub summary: RunSummary,
 }
 
+/// Current on-disk schema version of `data.json`. Bump when a change is not
+/// backwards compatible so older builds refuse to overwrite newer data.
+pub const DATA_SCHEMA_VERSION: u32 = 1;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppData {
+    /// Schema version. Files written before versioning was added have none and
+    /// deserialize as 0.
+    #[serde(default)]
+    pub version: u32,
+    #[serde(default)]
     pub target_lists: Vec<TargetList>,
+    #[serde(default)]
     pub check_templates: Vec<CheckTemplate>,
+    #[serde(default)]
     pub audits: Vec<Audit>,
     #[serde(default)]
     pub a11y_audits: Vec<A11yAudit>,
+    /// History retention in days. `0` means "keep forever".
     #[serde(default = "default_max_history_days")]
     pub max_history_days: u32,
 }
 
-fn default_max_history_days() -> u32 {
+pub(crate) fn default_max_history_days() -> u32 {
     90
+}
+
+fn default_a11y_engine() -> String {
+    "static".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -328,11 +367,119 @@ pub struct LinkCheckScanInfo {
 impl AppData {
     pub fn empty() -> Self {
         Self {
+            version: DATA_SCHEMA_VERSION,
             target_lists: Vec::new(),
             check_templates: Vec::new(),
             audits: Vec::new(),
             a11y_audits: Vec::new(),
             max_history_days: default_max_history_days(),
         }
+    }
+}
+
+impl Default for AppData {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL_CHECK_TYPES: [(CheckType, &str); 6] = [
+        (CheckType::Selector, "selector"),
+        (CheckType::Status, "status"),
+        (CheckType::Regex, "regex"),
+        (CheckType::Attribute, "attribute"),
+        (CheckType::Accessibility, "accessibility"),
+        (CheckType::JavaScript, "javascript"),
+    ];
+
+    #[test]
+    fn check_type_wire_names_round_trip() {
+        for (ct, wire) in ALL_CHECK_TYPES {
+            let json = serde_json::to_string(&ct).unwrap();
+            assert_eq!(json, format!("\"{}\"", wire));
+            let back: CheckType = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, ct);
+        }
+    }
+
+    #[test]
+    fn check_type_accepts_legacy_javascript_name() {
+        let ct: CheckType = serde_json::from_str("\"javaScript\"").unwrap();
+        assert_eq!(ct, CheckType::JavaScript);
+    }
+
+    #[test]
+    fn selector_check_with_javascript_type_round_trips() {
+        let json = r#"{"id":"c1","selector":"return true","label":"JS","checkType":"javascript"}"#;
+        let check: SelectorCheck = serde_json::from_str(json).unwrap();
+        assert_eq!(check.check_type, CheckType::JavaScript);
+        let out = serde_json::to_value(&check).unwrap();
+        assert_eq!(out["checkType"], "javascript");
+    }
+
+    #[test]
+    fn app_data_empty_object_uses_defaults() {
+        let data: AppData = serde_json::from_str("{}").unwrap();
+        assert!(data.target_lists.is_empty());
+        assert!(data.check_templates.is_empty());
+        assert!(data.audits.is_empty());
+        assert!(data.a11y_audits.is_empty());
+        assert_eq!(data.max_history_days, 90);
+        assert_eq!(data.version, 0);
+    }
+
+    #[test]
+    fn app_data_legacy_shape_without_optional_fields_loads() {
+        // Shape written by older builds: no version, no a11y_audits, an audit
+        // config missing headers/cookies, and an a11y audit missing engine and
+        // a11y_config.
+        let json = r#"{
+            "target_lists": [{"id":"t1","name":"T","urls":["https://a.test"],"createdAt":"x","updatedAt":"x","folder":null}],
+            "check_templates": [],
+            "audits": [{"id":"a1","name":"A","targetListId":"t1","checkTemplateId":"c1",
+                        "config":{"mode":"batch"},"originOverride":null,"urlPostfix":null,
+                        "createdAt":"x","folder":null,"baselineRunId":null}],
+            "a11y_audits": [{"id":"y1","name":"Y","targetListId":"t1",
+                        "originOverride":null,"urlPostfix":null,"createdAt":"x","folder":null}]
+        }"#;
+        let data: AppData = serde_json::from_str(json).unwrap();
+        assert_eq!(data.audits[0].config.batch_size, 5);
+        assert_eq!(data.audits[0].config.timeout_secs, 10);
+        assert_eq!(data.a11y_audits[0].engine, "static");
+        assert_eq!(data.a11y_audits[0].a11y_config.min_severity, "minor");
+        assert_eq!(data.a11y_audits[0].config.mode, "batch");
+    }
+
+    #[test]
+    fn app_data_round_trips() {
+        let mut data = AppData::empty();
+        data.target_lists.push(TargetList {
+            id: "t1".into(),
+            name: "T".into(),
+            urls: vec!["https://a.test".into()],
+            created_at: "x".into(),
+            updated_at: "x".into(),
+            pinned: true,
+            folder: Some("f".into()),
+        });
+        let json = serde_json::to_string(&data).unwrap();
+        let back: AppData = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.version, DATA_SCHEMA_VERSION);
+        assert_eq!(back.target_lists.len(), 1);
+        assert!(back.target_lists[0].pinned);
+    }
+
+    #[test]
+    fn reports_without_summary_load() {
+        let json = r#"{"id":"r","auditId":"a","startedAt":"s","completedAt":null,"status":"completed","results":[]}"#;
+        let report: A11yReport = serde_json::from_str(json).unwrap();
+        assert_eq!(report.summary.total_pages, 0);
+        let json = r#"{"id":"r","auditId":"a","startedAt":"s","completedAt":null,"status":"completed","results":[]}"#;
+        let run: AuditRun = serde_json::from_str(json).unwrap();
+        assert_eq!(run.summary.total, 0);
     }
 }

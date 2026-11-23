@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { useRun } from '@/hooks/useRun'
@@ -9,11 +9,20 @@ import { scrapeLinks, normalizeUrl } from '@/lib/tauri'
 import { resolveUrl } from '@/utils/resolveUrl'
 import { LiveSummary } from '@/components/LiveSummary'
 
+function parseUrls(text: string): string[] {
+  return text
+    .split('\n')
+    .map((u) => normalizeUrl(u))
+    .filter(Boolean)
+}
+
 export function QuickAuditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { checkTemplates, createTargetList, createAudit } = useStore()
+  const { checkTemplates, createTargetList, createAudit, loading } = useStore()
   const runner = useRun()
+  const uid = useId()
+  const quickPath = `/check-templates/${id}/quick-audit`
   const [urlsText, setUrlsText] = useState('')
   const [showScraper, setShowScraper] = useState(false)
   const [scrapeUrl, setScrapeUrl] = useState('')
@@ -30,37 +39,81 @@ export function QuickAuditPage() {
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [saveAuditName, setSaveAuditName] = useState('')
   const [saveTargetListName, setSaveTargetListName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Results show only on the template page that started the run (A-27).
+  const ownsRun = runner.runId != null && runner.ownerKey === quickPath
+  const thisRun = ownsRun ? runner.run : null
+  const thisRunning = ownsRun && runner.running
+  const otherRunning = runner.running && !ownsRun
 
   const template = checkTemplates.find((ct) => ct.id === id)
+
+  if (loading) {
+    return <div className="text-muted-foreground">Loading...</div>
+  }
 
   if (!template) {
     return <div className="text-muted-foreground">Template not found.</div>
   }
   const t = template
 
+  const config = () => ({
+    mode,
+    batchSize: Math.max(1, batchSize || 1),
+    timeoutSecs: Math.max(1, timeoutSecs || 1),
+    headers,
+    cookies,
+  })
+
   async function handleSaveAudit() {
     const name = saveAuditName.trim()
     const tlName = saveTargetListName.trim() || name
-    if (!name) return
-    const urls = urlsText
-      .split('\n')
-      .map((u) => u.trim())
-      .filter(Boolean)
+    if (!name || saving) return
+    // Same normalisation as Run, so the saved list matches what was checked (A-68).
+    const urls = parseUrls(urlsText)
     if (urls.length === 0) return
-    const tl = await createTargetList(tlName, urls)
-      await createAudit(name, tl.id, t.id, { mode, batchSize, timeoutSecs, headers, cookies })
-    setShowSaveModal(false)
-    setSaveAuditName('')
-    setSaveTargetListName('')
+    setSaving(true)
+    setError(null)
+    try {
+      const tl = await createTargetList(tlName, urls)
+      await createAudit(name, tl.id, t.id, config())
+      setShowSaveModal(false)
+      setSaveAuditName('')
+      setSaveTargetListName('')
+    } catch (e) {
+      setError(`Could not save the audit: ${String(e)}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function handleRun() {
-    const urls = urlsText
-      .split('\n')
-      .map((u) => normalizeUrl(u))
-      .filter(Boolean)
-    if (urls.length === 0) return
-    await runner.startQuick(urls, t.checks, { mode, batchSize, timeoutSecs, headers, cookies }, undefined, undefined, `/check-templates/${t.id}/quick-audit`)
+    const urls = parseUrls(urlsText)
+    if (urls.length === 0 || runner.running) return
+    setError(null)
+    await runner.startQuick(urls, t.checks, config(), undefined, undefined, quickPath)
+  }
+
+  async function handleScrape() {
+    if (!scrapeUrl.trim()) return
+    setScraping(true)
+    setError(null)
+    try {
+      const sourceUrl = normalizeUrl(scrapeUrl)
+      const links = await scrapeLinks(sourceUrl)
+      const resolved = links.map((l) => resolveUrl(l, sourceUrl))
+      setUrlsText((prev) => {
+        const existing = prev.trim() ? prev + '\n' : ''
+        return existing + resolved.join('\n')
+      })
+    } catch (e) {
+      console.error(e)
+      setError(`Could not scrape links: ${String(e)}`)
+    } finally {
+      setScraping(false)
+    }
   }
 
   return (
@@ -92,10 +145,13 @@ export function QuickAuditPage() {
 
       <div>
         <div className="flex items-center justify-between mb-1">
-          <label className="text-sm text-muted-foreground">URLs (one per line)</label>
+          <label htmlFor={`${uid}-urls`} className="text-sm text-muted-foreground">
+            URLs (one per line)
+          </label>
           <button
             type="button"
             onClick={() => setShowScraper(!showScraper)}
+            aria-expanded={showScraper}
             className="text-xs text-primary hover:underline"
           >
             {showScraper ? 'Hide scraper' : 'Scrape links'}
@@ -106,29 +162,14 @@ export function QuickAuditPage() {
             <input
               type="text"
               placeholder="https://example.com/page"
+              aria-label="Page to scrape links from"
               value={scrapeUrl}
               onChange={(e) => setScrapeUrl(e.target.value)}
               className="flex-1 px-3 py-2 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary"
             />
             <button
               type="button"
-              onClick={async () => {
-                if (!scrapeUrl.trim()) return
-                setScraping(true)
-                try {
-                  const sourceUrl = normalizeUrl(scrapeUrl)
-                  const links = await scrapeLinks(sourceUrl)
-                  const resolved = links.map((l) => resolveUrl(l, sourceUrl))
-                  setUrlsText((prev) => {
-                    const existing = prev.trim() ? prev + '\n' : ''
-                    return existing + resolved.join('\n')
-                  })
-                } catch (e) {
-                  console.error(e)
-                } finally {
-                  setScraping(false)
-                }
-              }}
+              onClick={handleScrape}
               disabled={!scrapeUrl.trim() || scraping}
               className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 shrink-0"
             >
@@ -137,6 +178,7 @@ export function QuickAuditPage() {
           </div>
         )}
         <textarea
+          id={`${uid}-urls`}
           placeholder="https://example.com&#10;https://example.org"
           value={urlsText}
           onChange={(e) => setUrlsText(e.target.value)}
@@ -147,8 +189,9 @@ export function QuickAuditPage() {
 
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className="text-sm text-muted-foreground block mb-1">Mode</label>
+          <label htmlFor={`${uid}-mode`} className="text-sm text-muted-foreground block mb-1">Mode</label>
           <select
+            id={`${uid}-mode`}
             value={mode}
             onChange={(e) => setMode(e.target.value as 'sequential' | 'batch')}
             className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
@@ -159,8 +202,9 @@ export function QuickAuditPage() {
         </div>
         {mode === 'batch' && (
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">Batch Size</label>
+            <label htmlFor={`${uid}-batch`} className="text-sm text-muted-foreground block mb-1">Batch Size</label>
             <input
+              id={`${uid}-batch`}
               type="number"
               min={1}
               max={20}
@@ -171,8 +215,9 @@ export function QuickAuditPage() {
           </div>
         )}
         <div>
-          <label className="text-sm text-muted-foreground block mb-1">Timeout (s)</label>
+          <label htmlFor={`${uid}-timeout`} className="text-sm text-muted-foreground block mb-1">Timeout (s)</label>
           <input
+            id={`${uid}-timeout`}
             type="number"
             min={1}
             max={120}
@@ -199,9 +244,10 @@ export function QuickAuditPage() {
                   delete next[k]
                   setHeaders(next)
                 }}
+                aria-label={`Remove header ${k}`}
                 className="text-destructive hover:underline shrink-0"
               >
-                ✕
+                <span aria-hidden="true">✕</span>
               </button>
             </div>
           ))}
@@ -209,6 +255,7 @@ export function QuickAuditPage() {
             <input
               type="text"
               placeholder="Header-Name"
+              aria-label="New header name"
               value={headerKey}
               onChange={(e) => setHeaderKey(e.target.value)}
               className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
@@ -216,6 +263,7 @@ export function QuickAuditPage() {
             <input
               type="text"
               placeholder="Value"
+              aria-label="New header value"
               value={headerVal}
               onChange={(e) => setHeaderVal(e.target.value)}
               className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
@@ -229,7 +277,7 @@ export function QuickAuditPage() {
               }}
               className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs font-medium hover:opacity-90 transition-opacity shrink-0"
             >
-              Add
+              Add<span className="sr-only"> header</span>
             </button>
           </div>
         </div>
@@ -247,9 +295,10 @@ export function QuickAuditPage() {
               <span className="flex-1 truncate">{c.value}</span>
               <button
                 onClick={() => setCookies((prev) => prev.filter((_, j) => j !== i))}
+                aria-label={`Remove cookie ${c.key}`}
                 className="text-destructive hover:underline shrink-0"
               >
-                ✕
+                <span aria-hidden="true">✕</span>
               </button>
             </div>
           ))}
@@ -257,6 +306,7 @@ export function QuickAuditPage() {
             <input
               type="text"
               placeholder="Name"
+              aria-label="New cookie name"
               value={cookieKey}
               onChange={(e) => setCookieKey(e.target.value)}
               className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
@@ -264,6 +314,7 @@ export function QuickAuditPage() {
             <input
               type="text"
               placeholder="Value"
+              aria-label="New cookie value"
               value={cookieVal}
               onChange={(e) => setCookieVal(e.target.value)}
               className="flex-1 px-2 py-1 border border-border rounded text-xs bg-background font-mono focus:outline-none focus:ring-1 focus:ring-primary"
@@ -277,14 +328,38 @@ export function QuickAuditPage() {
               }}
               className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs font-medium hover:opacity-90 transition-opacity shrink-0"
             >
-              Add
+              Add<span className="sr-only"> cookie</span>
             </button>
           </div>
         </div>
       </details>
 
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+
+      {ownsRun && runner.error && (
+        <div role="alert" className="flex items-center justify-between gap-2 text-sm text-destructive">
+          <span>Run failed: {runner.error}</span>
+          <button onClick={runner.clearError} className="text-xs underline hover:no-underline">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {otherRunning && runner.runPagePath && (
+        <p className="text-sm text-muted-foreground">
+          Another run is in progress.{' '}
+          <button onClick={() => navigate(runner.runPagePath!)} className="text-primary hover:underline">
+            View it
+          </button>
+        </p>
+      )}
+
       <div className="flex gap-2">
-        {runner.running ? (
+        {thisRunning ? (
           <button
             onClick={runner.cancel}
             className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
@@ -295,14 +370,14 @@ export function QuickAuditPage() {
           <>
             <button
               onClick={handleRun}
-              disabled={!urlsText.trim()}
+              disabled={!urlsText.trim() || otherRunning}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               Run
             </button>
             <button
               onClick={() => setShowSaveModal(true)}
-              disabled={runner.run == null || runner.running}
+              disabled={!urlsText.trim()}
               className="px-4 py-2 border border-border rounded-md text-sm hover:bg-muted transition-colors disabled:opacity-50"
             >
               Save as Audit
@@ -311,12 +386,14 @@ export function QuickAuditPage() {
         )}
       </div>
 
-      {runner.progress && <ProgressBar checked={runner.progress.checked} total={runner.progress.total} />}
+      {thisRunning && runner.progress && (
+        <ProgressBar checked={runner.progress.checked} total={runner.progress.total} />
+      )}
 
-      {(runner.run || runner.running) && (
+      {(thisRun || thisRunning) && (
         <div className="space-y-3">
-          <LiveSummary results={runner.run?.results ?? []} />
-          <ResultsTable results={runner.run?.results ?? []} selectors={template.checks} />
+          <LiveSummary results={thisRun?.results ?? []} />
+          <ResultsTable results={thisRun?.results ?? []} selectors={template.checks} />
         </div>
       )}
 
@@ -325,6 +402,7 @@ export function QuickAuditPage() {
           <input
             type="text"
             placeholder="Audit name"
+            aria-label="Audit name"
             value={saveAuditName}
             onChange={(e) => setSaveAuditName(e.target.value)}
             autoFocus
@@ -333,6 +411,7 @@ export function QuickAuditPage() {
           <input
             type="text"
             placeholder="Target list name (optional)"
+            aria-label="Target list name (optional)"
             value={saveTargetListName}
             onChange={(e) => setSaveTargetListName(e.target.value)}
             className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
@@ -340,7 +419,7 @@ export function QuickAuditPage() {
           <div className="flex gap-2">
             <button
               onClick={handleSaveAudit}
-              disabled={!saveAuditName.trim()}
+              disabled={!saveAuditName.trim() || saving}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               Save
