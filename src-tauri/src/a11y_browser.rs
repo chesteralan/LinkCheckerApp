@@ -19,6 +19,9 @@ use crate::a11y_runner::{
 use crate::models::*;
 
 const AXE_SOURCE: &str = include_str!("../assets/axe.min.js");
+/// Custom rules for checks IBM Equal Access reports that axe misses (SVG
+/// names, ARIA ID references).
+const AXE_EXTRA_RULES: &str = include_str!("../assets/axe-extra-rules.js");
 const MAX_NODES_PER_VIOLATION: usize = 25;
 const MAX_TOTAL_ISSUES: usize = 1000;
 
@@ -511,6 +514,9 @@ async fn scan_page(
     page.evaluate(AXE_SOURCE)
         .await
         .map_err(|e| format!("inject axe: {}", e))?;
+    page.evaluate(AXE_EXTRA_RULES)
+        .await
+        .map_err(|e| format!("inject axe rules: {}", e))?;
 
     let tags = axe_tags_for_standards(&config.standards);
     let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into());

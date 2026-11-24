@@ -673,6 +673,22 @@ fn check_landmarks(document: &Html, issues: &mut Vec<A11yIssue>) {
         }
     }
 
+    // All content should live inside a landmark (axe `region`, IBM
+    // "content must reside within an element with a landmark role").
+    if let Some(body) = select(document, "body").and_then(|sel| document.select(&sel).next()) {
+        let mut outside = Vec::new();
+        collect_content_outside_landmarks(&body, false, &mut outside);
+        for el in outside.iter().take(MAX_REGION_ISSUES) {
+            issues.push(issue(
+                "content-outside-landmark",
+                "moderate",
+                BEST_PRACTICE,
+                el,
+                "Content is not contained within a landmark (main, nav, header, footer, aside, or a named region)",
+            ));
+        }
+    }
+
     let mut id_counts: HashMap<&str, usize> = HashMap::new();
     each(document, "[id]", |el| {
         if let Some(id) = el.value().attr("id") {
@@ -697,10 +713,10 @@ fn check_landmarks(document: &Html, issues: &mut Vec<A11yIssue>) {
 // ─── ARIA ───
 
 fn check_aria(document: &Html, issues: &mut Vec<A11yIssue>) {
-    let mut all_ids: HashSet<String> = HashSet::new();
+    let mut id_counts: HashMap<String, usize> = HashMap::new();
     each(document, "[id]", |el| {
         if let Some(id) = el.value().attr("id") {
-            all_ids.insert(id.to_string());
+            *id_counts.entry(id.to_string()).or_default() += 1;
         }
     });
 
@@ -709,22 +725,46 @@ fn check_aria(document: &Html, issues: &mut Vec<A11yIssue>) {
         "aria-describedby",
         "aria-controls",
         "aria-owns",
+        "aria-activedescendant",
+        "aria-flowto",
         "aria-details",
         "aria-errormessage",
     ] {
         if let Some(sel) = select(document, &format!("[{}]", attr)) {
             for el in document.select(&sel) {
-                if let Some(refs) = el.value().attr(attr) {
-                    for r in refs.split_whitespace() {
-                        if !all_ids.contains(r) {
-                            issues.push(issue(
-                                "broken-aria-ref",
-                                "serious",
-                                "4.1.2",
-                                &el,
-                                &format!("{} references non-existent id \"{}\"", attr, r),
-                            ));
-                        }
+                let Some(refs) = el.value().attr(attr) else {
+                    continue;
+                };
+                if refs.trim().is_empty() {
+                    issues.push(issue(
+                        "broken-aria-ref",
+                        "serious",
+                        "4.1.2",
+                        &el,
+                        &format!("{} is empty — it must reference an element id", attr),
+                    ));
+                    continue;
+                }
+                for r in refs.split_whitespace() {
+                    match id_counts.get(r).copied().unwrap_or(0) {
+                        0 => issues.push(issue(
+                            "broken-aria-ref",
+                            "serious",
+                            "4.1.2",
+                            &el,
+                            &format!("{} references non-existent id \"{}\"", attr, r),
+                        )),
+                        1 => {}
+                        n => issues.push(issue(
+                            "broken-aria-ref",
+                            "serious",
+                            "4.1.2",
+                            &el,
+                            &format!(
+                                "{} references id \"{}\" which is not unique ({} elements)",
+                                attr, r, n
+                            ),
+                        )),
                     }
                 }
             }
@@ -959,6 +999,15 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
                 &format!("Link href is a placeholder (\"{}\")", href),
             ));
         }
+        if !is_hidden(a) && !has_accessible_name(document, a) {
+            issues.push(issue(
+                "link-name",
+                "serious",
+                "2.4.4",
+                a,
+                "Link has no accessible name (no text, aria-label, aria-labelledby, title, or image alt)",
+            ));
+        }
     });
 
     // Buttons without accessible name
@@ -1171,6 +1220,33 @@ fn check_interactive(document: &Html, issues: &mut Vec<A11yIssue>) {
 // ─── Media ───
 
 fn check_media(document: &Html, issues: &mut Vec<A11yIssue>) {
+    // Non-decorative SVGs need an accessible name (WCAG 1.1.1). Decorative
+    // ones must be hidden with aria-hidden="true" or role="presentation"/"none".
+    each(document, "svg", |svg| {
+        let nested = svg
+            .ancestors()
+            .filter_map(ElementRef::wrap)
+            .any(|a| a.value().name() == "svg");
+        let role = svg
+            .value()
+            .attr("role")
+            .and_then(|r| r.split_whitespace().next())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if nested || matches!(role.as_str(), "none" | "presentation") || is_hidden(svg) {
+            return;
+        }
+        if !svg_has_name(document, svg) {
+            issues.push(issue(
+                "svg-no-name",
+                "serious",
+                "1.1.1",
+                svg,
+                "SVG has no accessible name (aria-label, aria-labelledby or <title>); hide it with aria-hidden=\"true\" if decorative",
+            ));
+        }
+    });
+
     for tag in ["video", "audio"] {
         if let Some(sel) = select(document, tag) {
             for el in document.select(&sel) {
@@ -1419,6 +1495,222 @@ fn check_forms(document: &Html, issues: &mut Vec<A11yIssue>) {
 }
 
 // ─── Helpers ───
+
+/// Cap on `content-outside-landmark` issues per page — one badly structured
+/// template can otherwise produce hundreds.
+const MAX_REGION_ISSUES: usize = 10;
+
+fn attr_non_empty(el: &ElementRef, name: &str) -> bool {
+    el.value()
+        .attr(name)
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false)
+}
+
+/// Hidden from assistive technology via aria-hidden / hidden on the element
+/// or an ancestor (static approximation — CSS isn't evaluated).
+fn is_hidden(el: &ElementRef) -> bool {
+    std::iter::once(*el)
+        .chain(el.ancestors().filter_map(ElementRef::wrap))
+        .any(|e| {
+            e.value().attr("hidden").is_some()
+                || e.value()
+                    .attr("aria-hidden")
+                    .map(|v| v.trim().eq_ignore_ascii_case("true"))
+                    .unwrap_or(false)
+        })
+}
+
+/// True when `aria-labelledby` references at least one existing element
+/// with non-empty text.
+fn labelledby_resolves(document: &Html, el: &ElementRef) -> bool {
+    let Some(refs) = el.value().attr("aria-labelledby") else {
+        return false;
+    };
+    refs.split_whitespace().any(|id| {
+        Selector::parse(&format!("[id=\"{}\"]", id.replace('"', "\\\"")))
+            .ok()
+            .and_then(|sel| document.select(&sel).next())
+            .map(|t| !t.text().collect::<String>().trim().is_empty())
+            .unwrap_or(false)
+    })
+}
+
+fn svg_has_name(document: &Html, svg: &ElementRef) -> bool {
+    attr_non_empty(svg, "aria-label")
+        || labelledby_resolves(document, svg)
+        || attr_non_empty(svg, "title")
+        || svg
+            .children()
+            .filter_map(ElementRef::wrap)
+            .any(|c| c.value().name() == "title" && !c.text().collect::<String>().trim().is_empty())
+}
+
+/// Accessible name from content (text, img alt, named svg), skipping
+/// aria-hidden subtrees.
+fn content_has_name(document: &Html, el: &ElementRef) -> bool {
+    for child in el.children() {
+        if let Some(text) = child.value().as_text() {
+            if !text.trim().is_empty() {
+                return true;
+            }
+            continue;
+        }
+        let Some(c) = ElementRef::wrap(child) else {
+            continue;
+        };
+        let hidden = c
+            .value()
+            .attr("aria-hidden")
+            .map(|v| v.trim().eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+            || c.value().attr("hidden").is_some();
+        if hidden {
+            continue;
+        }
+        let named = match c.value().name() {
+            "img" | "area" => attr_non_empty(&c, "alt") || attr_non_empty(&c, "aria-label"),
+            "input" => attr_non_empty(&c, "alt") || attr_non_empty(&c, "value"),
+            "svg" => svg_has_name(document, &c),
+            "script" | "style" | "template" | "noscript" => false,
+            _ => {
+                attr_non_empty(&c, "aria-label")
+                    || labelledby_resolves(document, &c)
+                    || content_has_name(document, &c)
+            }
+        };
+        if named {
+            return true;
+        }
+    }
+    false
+}
+
+fn has_accessible_name(document: &Html, el: &ElementRef) -> bool {
+    attr_non_empty(el, "aria-label")
+        || labelledby_resolves(document, el)
+        || attr_non_empty(el, "title")
+        || content_has_name(document, el)
+}
+
+const LANDMARK_ROLES: &[&str] = &[
+    "banner",
+    "complementary",
+    "contentinfo",
+    "form",
+    "main",
+    "navigation",
+    "region",
+    "search",
+];
+
+fn is_landmark(el: &ElementRef, in_sectioning: bool) -> bool {
+    if let Some(role) = el.value().attr("role") {
+        if let Some(first) = role.split_whitespace().next() {
+            let first = first.to_ascii_lowercase();
+            if LANDMARK_ROLES.contains(&first.as_str()) {
+                return true;
+            }
+            // An explicit non-landmark role overrides the element's own.
+            if is_valid_role(&first) {
+                return false;
+            }
+        }
+    }
+    let named = attr_non_empty(el, "aria-label") || attr_non_empty(el, "aria-labelledby");
+    match el.value().name() {
+        "main" | "nav" | "aside" | "search" => true,
+        // header/footer are only banner/contentinfo when scoped to the body
+        "header" | "footer" => !in_sectioning,
+        "section" | "form" => named,
+        _ => false,
+    }
+}
+
+fn is_perceivable_leaf(el: &ElementRef) -> bool {
+    matches!(
+        el.value().name(),
+        "img"
+            | "svg"
+            | "input"
+            | "select"
+            | "textarea"
+            | "button"
+            | "video"
+            | "audio"
+            | "iframe"
+            | "canvas"
+            | "object"
+            | "embed"
+    )
+}
+
+/// Walk the body and collect the outermost elements whose content sits
+/// outside every landmark. Skip links and hidden/non-rendered nodes are
+/// ignored.
+fn collect_content_outside_landmarks<'a>(
+    el: &ElementRef<'a>,
+    in_sectioning: bool,
+    out: &mut Vec<ElementRef<'a>>,
+) {
+    for child in el.children() {
+        if let Some(text) = child.value().as_text() {
+            if !text.trim().is_empty() && el.value().name() != "body" {
+                out.push(*el);
+                return;
+            }
+            continue;
+        }
+        let Some(c) = ElementRef::wrap(child) else {
+            continue;
+        };
+        let tag = c.value().name();
+        if matches!(
+            tag,
+            "script" | "style" | "template" | "noscript" | "link" | "meta" | "dialog"
+        ) || c.value().attr("hidden").is_some()
+            || c.value()
+                .attr("aria-hidden")
+                .map(|v| v.trim().eq_ignore_ascii_case("true"))
+                .unwrap_or(false)
+            || (tag == "input" && c.value().attr("type") == Some("hidden"))
+        {
+            continue;
+        }
+        if is_landmark(&c, in_sectioning) {
+            continue;
+        }
+        // Skip links legitimately precede the landmarks.
+        if tag == "a"
+            && c.value()
+                .attr("href")
+                .map(|h| h.starts_with('#') && h.len() > 1)
+                .unwrap_or(false)
+        {
+            continue;
+        }
+        let has_text = !c.text().collect::<String>().trim().is_empty();
+        let has_leaf = c
+            .descendants()
+            .filter_map(ElementRef::wrap)
+            .any(|d| is_perceivable_leaf(&d))
+            || is_perceivable_leaf(&c);
+        if !has_text && !has_leaf {
+            continue;
+        }
+        let contains_landmark = c
+            .descendants()
+            .skip(1)
+            .filter_map(ElementRef::wrap)
+            .any(|d| is_landmark(&d, true) || matches!(d.value().name(), "header" | "footer"));
+        if contains_landmark {
+            let sectioning = in_sectioning || matches!(tag, "article" | "section");
+            collect_content_outside_landmarks(&c, sectioning, out);
+        } else {
+            out.push(c);
+        }
+    }
+}
 
 fn accessible_name(el: &ElementRef) -> Option<String> {
     if let Some(v) = el.value().attr("aria-label") {
@@ -1868,5 +2160,91 @@ mod tests {
         assert!(types(&run_a11y_scan(html, &cfg)).contains(&"duplicate-id"));
         cfg.standards = vec!["wcag22".into(), "section508".into()];
         assert!(types(&run_a11y_scan(html, &cfg)).contains(&"duplicate-id"));
+    }
+
+    fn count(issues: &[A11yIssue], t: &str) -> usize {
+        issues.iter().filter(|i| i.issue_type == t).count()
+    }
+
+    #[test]
+    fn svg_without_name_is_flagged() {
+        let html = r##"<html lang="en"><head><title>t</title></head><body><main>
+            <svg id="bad"><path d="M0 0"/></svg>
+            <svg aria-hidden="true"><path/></svg>
+            <svg role="presentation"><path/></svg>
+            <svg aria-label="Cart"><path/></svg>
+            <svg><title>Logo</title><g><svg><path/></svg></g></svg>
+            <span id="lbl">Search</span><svg aria-labelledby="lbl"><path/></svg>
+            <button aria-label="Close"><svg class="icon"><path/></svg></button>
+        </main></body></html>"##;
+        let issues = run_a11y_scan(html, &config());
+        // #bad and the icon inside the button (decorative but not hidden)
+        assert_eq!(count(&issues, "svg-no-name"), 2, "{:?}", types(&issues));
+    }
+
+    #[test]
+    fn aria_idref_empty_missing_and_duplicate() {
+        let html = r##"<html lang="en"><head><title>t</title></head><body><main>
+            <div id="d">x</div><div id="d">y</div><p id="ok">ok</p>
+            <button aria-describedby="">a</button>
+            <button aria-describedby="nope">b</button>
+            <button aria-labelledby="d">c</button>
+            <input aria-activedescendant="gone" aria-label="i">
+            <button aria-describedby="ok">fine</button>
+        </main></body></html>"##;
+        let issues = run_a11y_scan(html, &config());
+        let msgs: Vec<&str> = issues
+            .iter()
+            .filter(|i| i.issue_type == "broken-aria-ref")
+            .map(|i| i.message.as_str())
+            .collect();
+        assert_eq!(msgs.len(), 4, "{:?}", msgs);
+        assert!(msgs.iter().any(|m| m.contains("is empty")));
+        assert!(msgs.iter().any(|m| m.contains("not unique")));
+        assert!(msgs.iter().any(|m| m.contains("aria-activedescendant")));
+    }
+
+    #[test]
+    fn link_without_accessible_name() {
+        let html = r##"<html lang="en"><head><title>t</title></head><body><main>
+            <a href="/a" id="bad1"><svg><path/></svg></a>
+            <a href="/b" id="bad2"><img src="x.png" alt=""></a>
+            <a href="/c" id="bad3"><span aria-hidden="true">x</span></a>
+            <a href="/d">Text</a>
+            <a href="/e" aria-label="E"><svg><path/></svg></a>
+            <a href="/f"><img src="f.png" alt="F"></a>
+            <a href="/g"><svg><title>G</title></svg></a>
+            <a href="/h" title="H"></a>
+        </main></body></html>"##;
+        let issues = run_a11y_scan(html, &config());
+        let sels: Vec<&str> = issues
+            .iter()
+            .filter(|i| i.issue_type == "link-name")
+            .map(|i| i.selector.as_str())
+            .collect();
+        assert_eq!(sels, vec!["a#bad1", "a#bad2", "a#bad3"]);
+    }
+
+    #[test]
+    fn content_outside_landmarks() {
+        let html = r##"<html lang="en"><head><title>t</title></head><body>
+            <a href="#main">Skip to content</a>
+            <div class="wrap">
+                <header>Site</header>
+                <div class="promo">Free shipping!</div>
+                <main id="main"><section><header>Article head</header><p>p</p></section></main>
+            </div>
+            <footer>f</footer>
+            <div class="cookie">Cookie banner</div>
+            <div id="root"></div>
+            <script>var x = 1;</script>
+        </body></html>"##;
+        let issues = run_a11y_scan(html, &config());
+        let sels: Vec<&str> = issues
+            .iter()
+            .filter(|i| i.issue_type == "content-outside-landmark")
+            .map(|i| i.selector.as_str())
+            .collect();
+        assert_eq!(sels, vec!["div.promo", "div.cookie"]);
     }
 }

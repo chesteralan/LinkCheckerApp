@@ -103,12 +103,13 @@ The tables have 49 rows covering 48 distinct rule ids. `missing-label` appears t
 | `missing-contentinfo` | minor | 1.3.1 | No footer or contentinfo landmark |
 | `unnamed-duplicate-landmark` | moderate | 1.3.1 | More than one nav landmark, and this one has no `aria-label`, `aria-labelledby` or `title` |
 | `duplicate-id` | moderate | 4.1.1 | An `id` value is used more than once (one issue per id) |
+| `content-outside-landmark` | moderate | best practice | Visible content (text or media/form controls) in `<body>` that is not inside a landmark. Skip links, hidden nodes and scripts are ignored. At most 10 per page. |
 
 #### aria
 
 | Rule id | Impact | WCAG | Trigger |
 |---|---|---|---|
-| `broken-aria-ref` | serious | 4.1.2 | `aria-labelledby`, `-describedby`, `-controls`, `-owns`, `-details` or `-errormessage` points to an id that does not exist |
+| `broken-aria-ref` | serious | 4.1.2 | `aria-labelledby`, `-describedby`, `-controls`, `-owns`, `-activedescendant`, `-flowto`, `-details` or `-errormessage` is empty, points to an id that does not exist, or points to an id used more than once |
 | `invalid-role` | moderate | 4.1.2 | A `role` token is not in `VALID_ROLES` |
 | `aria-hidden-focusable` | serious | 4.1.2 | `[aria-hidden=true]` is focusable or contains focusable content |
 | `presentation-focusable` | serious | 4.1.2 | `role=presentation` or `role=none` is focusable or contains focusable content |
@@ -122,7 +123,8 @@ The tables have 49 rows covering 48 distinct rule ids. `missing-label` appears t
 |---|---|---|---|
 | `missing-alt` | critical | 1.1.1 | `<img>` without `alt`; also `input[type=image]` or `area[href]` without `alt` |
 | `empty-alt` | minor | 1.1.1 | `<img alt="">`, which is reported as informational because it is fine for decorative images |
-| `empty-link` | serious | 2.4.4 | `<a>` with no `href` or an empty one. Link **text** is not checked. |
+| `empty-link` | serious | 2.4.4 | `<a>` with no `href` or an empty one |
+| `link-name` | serious | 2.4.4 | `<a href>` with no accessible name: no text, `aria-label`, resolvable `aria-labelledby`, `title`, image `alt` or named `<svg>` (content under `aria-hidden` is ignored) |
 | `placeholder-link` | moderate | 2.4.4 | `href="#"` or `javascript:…` |
 | `missing-label` | serious | 4.1.2 | `<button>` with no accessible name (see `accessible_name`) |
 | `positive-tabindex` | moderate | 2.4.3 | `tabindex` > 0 |
@@ -142,6 +144,7 @@ The tables have 49 rows covering 48 distinct rule ids. `missing-label` appears t
 | `media-autoplay-no-controls` | moderate | 2.2.2 | `autoplay` media without `controls` |
 | `marquee-blink` | moderate | 2.2.2 | `<marquee>` or `<blink>` |
 | `iframe-no-title` | serious | 4.1.2 | `<iframe>` without a non-empty `title` or `aria-label` |
+| `svg-no-name` | serious | 1.1.1 | Outermost `<svg>` that is not hidden (`aria-hidden=true`, `hidden`, `role=presentation\|none`) and has no `aria-label`, resolvable `aria-labelledby`, `title` or `<title>` child |
 
 #### tables
 
@@ -195,7 +198,10 @@ No Windows paths are checked, so on Windows the only option is `A11Y_CHROME_PATH
 ### Injecting and running axe
 
 - axe-core **4.14.1** is stored in the repo at `src-tauri/assets/axe.min.js` and compiled into the binary with `include_str!` (`AXE_SOURCE`). No network fetch is needed.
-- After navigation, the engine calls `page.evaluate(AXE_SOURCE)` and then `axe.run({ runOnly: { type: 'tag', values: <tags> }, resultTypes: ['violations'] })`, and gets the violations back as a JSON string.
+- After navigation, the engine calls `page.evaluate(AXE_SOURCE)`, then `page.evaluate(AXE_EXTRA_RULES)` (`src-tauri/assets/axe-extra-rules.js`), which registers two custom rules that match IBM Equal Access checks axe lacks:
+  - `svg-accessible-name` (serious, WCAG 1.1.1): any outermost `<svg>` that is not `aria-hidden` or `role=presentation|none` must have a name. axe's own `svg-img-alt` only checks `role=img`, so those are skipped here.
+  - `aria-idref-valid` (serious, WCAG 4.1.2): every ARIA ID-reference attribute must be non-empty and each id must exist exactly once.
+- It then calls `axe.run({ runOnly: { type: 'tag', values: <tags> }, resultTypes: ['violations'] })`, and gets the violations back as a JSON string.
 - There is no explicit wait for network idle or a selector. axe runs as soon as `goto` resolves.
 
 ### Timeouts
