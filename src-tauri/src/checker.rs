@@ -6,8 +6,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, Notify, Semaphore};
 use tokio::task::JoinSet;
 
-use crate::models::*;
 use crate::commands::lock_or_recover;
+use crate::models::*;
 use crate::AppState;
 
 /// Upper bound on concurrent requests per run (A-07).

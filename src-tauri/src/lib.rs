@@ -57,10 +57,7 @@ pub fn run() {
             // Single source of truth for the version: tauri.conf.json reads it
             // from package.json; the title is derived from it here.
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_title(&format!(
-                    "Link Checker v{}",
-                    app.package_info().version
-                ));
+                let _ = window.set_title(&format!("Link Checker v{}", app.package_info().version));
             }
 
             app.manage(AppState {

@@ -7,8 +7,8 @@ use tokio::sync::Semaphore;
 use crate::checker::{
     emit_run_error, read_body_capped, resolve_operation_id, CancelToken, MAX_BODY_BYTES,
 };
-use crate::models::*;
 use crate::commands::lock_or_recover;
+use crate::models::*;
 use crate::AppState;
 
 #[derive(Deserialize)]
