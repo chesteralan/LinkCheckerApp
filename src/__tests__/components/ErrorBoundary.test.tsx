@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
@@ -24,5 +24,30 @@ describe('ErrorBoundary', () => {
     )
 
     expect(screen.getByText(/something went wrong/i)).toBeInTheDocument()
+  })
+})
+
+describe('ErrorBoundary resetKey', () => {
+  it('clears the error when resetKey changes', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let shouldThrow = true
+    const Maybe = () => {
+      if (shouldThrow) throw new Error('boom')
+      return <div>recovered</div>
+    }
+    const { rerender } = render(
+      <ErrorBoundary resetKey="/a">
+        <Maybe />
+      </ErrorBoundary>,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('boom')
+    shouldThrow = false
+    rerender(
+      <ErrorBoundary resetKey="/b">
+        <Maybe />
+      </ErrorBoundary>,
+    )
+    expect(screen.getByText('recovered')).toBeInTheDocument()
+    errorSpy.mockRestore()
   })
 })

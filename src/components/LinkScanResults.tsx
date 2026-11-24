@@ -1,15 +1,12 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { save } from '@tauri-apps/plugin-dialog'
-import { writeFile } from '@/lib/tauri'
+import { saveTextFile } from '@/lib/tauri'
+import { safeHref } from '@/lib/a11yReportHtml'
+import { toCsv } from '@/utils/csv'
 import { useStore } from '@/hooks/useStore'
 import { A11yIssuesList } from '@/components/A11yIssuesList'
 import { Modal } from '@/components/Modal'
 import type { LinkCheckResult } from '@/types'
-
-function csvEscape(v: string | number | null | undefined): string {
-  return `"${String(v ?? '').replace(/"/g, '""')}"`
-}
 
 export function LinkScanResults({
   results,
@@ -26,25 +23,41 @@ export function LinkScanResults({
   const [targetListName, setTargetListName] = useState('')
   const [addingToList, setAddingToList] = useState(false)
   const [addResult, setAddResult] = useState<string | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const listNameId = useId()
 
   async function handleExport(format: 'json' | 'csv') {
-    const path = await save({
-      defaultPath: `${exportName}-${Date.now()}.${format}`,
-      filters: [{ name: format.toUpperCase(), extensions: [format] }],
-    })
-    if (!path) return
+    setExportError(null)
     const content =
       format === 'json'
         ? JSON.stringify(results, null, 2)
-        : [
-            'URL,Source URL,Depth,Status,Status Text,Error,A11y Issues',
-            ...results.map((r) =>
-              [r.url, r.sourceUrl, r.depth, r.status ?? '', r.statusText, r.error ?? '', r.a11yIssues?.length ?? 0]
-                .map(csvEscape)
-                .join(',')
-            ),
-          ].join('\n')
-    await writeFile(path, content)
+        : toCsv(
+            ['URL', 'Source URL', 'Depth', 'Status', 'Status Text', 'Error', 'A11y Issues'],
+            results.map((r) => [
+              r.url,
+              r.sourceUrl,
+              r.depth,
+              r.status,
+              r.statusText,
+              r.error,
+              r.a11yIssues?.length ?? 0,
+            ]),
+          )
+    try {
+      await saveTextFile({
+        defaultName: `${exportName}-${Date.now()}.${format}`,
+        content,
+        filterName: format.toUpperCase(),
+        extensions: [format],
+      })
+    } catch (e) {
+      setExportError(`Export failed: ${String(e)}`)
+    }
+  }
+
+  function openExternal(url: string) {
+    const href = safeHref(url)
+    if (href) openUrl(href).catch(() => {})
   }
 
   const passed = results.filter((r) => r.status != null && r.status < 400 && !r.error)
@@ -118,16 +131,33 @@ export function LinkScanResults({
           Export CSV
         </button>
       </div>
+      {exportError && (
+        <p role="alert" className="text-sm text-destructive">
+          {exportError}
+        </p>
+      )}
 
       <div className="border border-border rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-muted/50 text-left">
-              <th className="px-3 py-2 font-medium">URL</th>
-              <th className="px-3 py-2 font-medium w-20">Status</th>
-              <th className="px-3 py-2 font-medium w-20">Depth</th>
-              {a11yCol && <th className="px-3 py-2 font-medium w-20">A11y</th>}
-              <th className="px-3 py-2 font-medium w-32">Source</th>
+              <th scope="col" className="px-3 py-2 font-medium">
+                URL
+              </th>
+              <th scope="col" className="px-3 py-2 font-medium w-20">
+                Status
+              </th>
+              <th scope="col" className="px-3 py-2 font-medium w-20">
+                Depth
+              </th>
+              {a11yCol && (
+                <th scope="col" className="px-3 py-2 font-medium w-20">
+                  A11y
+                </th>
+              )}
+              <th scope="col" className="px-3 py-2 font-medium w-32">
+                Source
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -135,7 +165,8 @@ export function LinkScanResults({
               <tr key={r.url + r.depth} className="hover:bg-muted/30">
                 <td className="px-3 py-2">
                   <button
-                    onClick={() => openUrl(r.url)}
+                    type="button"
+                    onClick={() => openExternal(r.url)}
                     className="text-primary hover:underline text-xs font-mono truncate max-w-[400px] block"
                     title={r.url}
                   >
@@ -146,7 +177,7 @@ export function LinkScanResults({
                 <td className="px-3 py-2">
                   {r.error ? (
                     <span className="text-destructive text-xs" title={r.error}>
-                      error
+                      error<span className="sr-only">: {r.error}</span>
                     </span>
                   ) : r.status != null && r.status >= 400 ? (
                     <span className="text-destructive text-xs font-medium">
@@ -165,7 +196,9 @@ export function LinkScanResults({
                   <td className="px-3 py-2">
                     {(r.a11yIssues?.length ?? 0) > 0 ? (
                       <button
+                        type="button"
                         onClick={() => setA11yModal(r)}
+                        aria-label={`Show ${r.a11yIssues.length} accessibility issues for ${r.url}`}
                         className="text-xs px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-600 dark:text-orange-400 font-medium hover:opacity-80"
                       >
                         {r.a11yIssues.length} issues
@@ -192,19 +225,18 @@ export function LinkScanResults({
         {a11yModal && <A11yIssuesList issues={a11yModal.a11yIssues ?? []} maxHeight="60vh" />}
       </Modal>
 
-      <Modal
-        open={showTargetListModal}
-        onClose={() => setShowTargetListModal(false)}
-        title="Add to Target Lists"
-      >
+      <Modal open={showTargetListModal} onClose={() => setShowTargetListModal(false)} title="Add to Target Lists">
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Create a new target list with <span className="font-medium text-foreground">{goodUrls.length}</span> working
             link{goodUrls.length !== 1 ? 's' : ''} (broken and errored links excluded).
           </p>
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">List name</label>
+            <label htmlFor={listNameId} className="text-sm text-muted-foreground block mb-1">
+              List name
+            </label>
             <input
+              id={listNameId}
               type="text"
               value={targetListName}
               onChange={(e) => setTargetListName(e.target.value)}
@@ -212,7 +244,11 @@ export function LinkScanResults({
               autoFocus
             />
           </div>
-          {addResult && <p className="text-sm text-muted-foreground">{addResult}</p>}
+          {addResult && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {addResult}
+            </p>
+          )}
           <div className="flex gap-2">
             <button
               onClick={handleAddToTargetList}

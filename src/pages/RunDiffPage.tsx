@@ -1,87 +1,49 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getRunResults } from '@/lib/tauri'
-import { openUrl } from '@tauri-apps/plugin-opener'
+import { openExternal } from '@/lib/openExternal'
 import type { AuditRun, PageResult } from '@/types'
-
-function keyForUrl(url: string): string {
-  try {
-    const u = new URL(url)
-    return u.pathname + u.search + u.hash
-  } catch {
-    return url
-  }
-}
-
-function compareRuns(a: AuditRun, b: AuditRun) {
-  const mapA = new Map(a.results.map((r) => [keyForUrl(r.url), r]))
-  const mapB = new Map(b.results.map((r) => [keyForUrl(r.url), r]))
-
-  const allKeys = new Set([...mapA.keys(), ...mapB.keys()])
-  const added: { url: string; result: PageResult }[] = []
-  const removed: { url: string; result: PageResult }[] = []
-  const regressions: { url: string; from: PageResult; to: PageResult }[] = []
-  const improvements: { url: string; from: PageResult; to: PageResult }[] = []
-  const unchanged: { url: string; result: PageResult }[] = []
-
-  for (const key of allKeys) {
-    const rA = mapA.get(key)
-    const rB = mapB.get(key)
-
-    if (!rA && rB) {
-      addOrPush(key, rB, added, removed, regressions, improvements, unchanged, 'added')
-    } else if (rA && !rB) {
-      addOrPush(key, rA, added, removed, regressions, improvements, unchanged, 'removed')
-    } else if (rA && rB) {
-      const passedA = !rA.error && rA.checks.every((c) => c.found)
-      const passedB = !rB.error && rB.checks.every((c) => c.found)
-      if (passedA && !passedB) {
-        regressions.push({ url: rA.url, from: rA, to: rB })
-      } else if (!passedA && passedB) {
-        improvements.push({ url: rA.url, from: rA, to: rB })
-      } else {
-        unchanged.push({ url: rA.url, result: rA })
-      }
-    }
-  }
-
-  return { added, removed, regressions, improvements, unchanged }
-}
-
-function addOrPush(
-  _key: string,
-  result: PageResult,
-  added: { url: string; result: PageResult }[],
-  removed: { url: string; result: PageResult }[],
-  _regressions: { url: string; from: PageResult; to: PageResult }[],
-  _improvements: { url: string; from: PageResult; to: PageResult }[],
-  _unchanged: { url: string; result: PageResult }[],
-  type: 'added' | 'removed',
-) {
-  if (type === 'added') added.push({ url: result.url, result })
-  else removed.push({ url: result.url, result })
-}
+import { compareRuns, orderRunsByTime, pageOutcome, type DiffSingle } from '@/utils/runDiff'
 
 export function RunDiffPage() {
   const { runIdA, runIdB } = useParams<{ runIdA: string; runIdB: string }>()
   const navigate = useNavigate()
-  const [runA, setRunA] = useState<AuditRun | null>(null)
-  const [runB, setRunB] = useState<AuditRun | null>(null)
-  const [loading, setLoading] = useState(true)
+  const pairKey = `${runIdA}/${runIdB}`
+  const [loaded, setLoaded] = useState<{
+    key: string
+    runs: [AuditRun, AuditRun] | null
+    error: string | null
+  } | null>(null)
 
   useEffect(() => {
     if (!runIdA || !runIdB) return
+    let active = true
+    const key = `${runIdA}/${runIdB}`
     Promise.all([getRunResults(runIdA), getRunResults(runIdB)])
       .then(([a, b]) => {
-        setRunA(a)
-        setRunB(b)
+        // Always diff older -> newer, whatever order the runs were selected in (A-23).
+        if (active) setLoaded({ key, runs: orderRunsByTime(a, b), error: null })
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
+      .catch((e) => {
+        if (active) setLoaded({ key, runs: null, error: String(e) })
+      })
+    return () => {
+      active = false
+    }
   }, [runIdA, runIdB])
 
-  if (loading) return <div className="text-muted-foreground">Loading...</div>
-  if (!runA || !runB) return <div className="text-muted-foreground">Could not load runs.</div>
+  if (loaded?.key !== pairKey) return <div className="text-muted-foreground">Loading...</div>
+  const [runA, runB] = loaded.runs ?? [null, null]
+  const error = loaded.error
+  if (error || !runA || !runB)
+    return (
+      <div className="space-y-2">
+        <p className="text-destructive text-sm">Could not load runs{error ? `: ${error}` : '.'}</p>
+        <button onClick={() => navigate('/history')} className="text-sm text-primary hover:underline">
+          &larr; History
+        </button>
+      </div>
+    )
 
   const diff = compareRuns(runA, runB)
 
@@ -96,11 +58,11 @@ export function RunDiffPage() {
 
       <div className="flex items-center gap-6 text-sm text-muted-foreground border border-border rounded-lg p-4">
         <div>
-          <span className="font-medium text-foreground">Run A:</span>{' '}
+          <span className="font-medium text-foreground">Before:</span>{' '}
           {new Date(runA.startedAt).toLocaleString()} ({runA.results.length} URLs)
         </div>
         <div>
-          <span className="font-medium text-foreground">Run B:</span>{' '}
+          <span className="font-medium text-foreground">After:</span>{' '}
           {new Date(runB.startedAt).toLocaleString()} ({runB.results.length} URLs)
         </div>
       </div>
@@ -118,8 +80,15 @@ export function RunDiffPage() {
         {diff.removed.length > 0 && (
           <span className="text-muted-foreground">-{diff.removed.length} removed URLs</span>
         )}
+        {diff.changed.length > 0 && <span className="text-warning font-medium">~{diff.changed.length} changed</span>}
         <span className="text-muted-foreground">{diff.unchanged.length} unchanged</span>
       </div>
+
+      {diff.matchedByPath && (
+        <p className="text-xs text-muted-foreground">
+          The runs used different origins, so pages are matched by path, query and fragment.
+        </p>
+      )}
 
       {diff.regressions.length > 0 && (
         <section>
@@ -129,7 +98,7 @@ export function RunDiffPage() {
           <div className="space-y-2">
             {diff.regressions.map((r) => (
               <DiffCard
-                key={r.url}
+                key={r.key}
                 url={r.url}
                 a={r.from}
                 b={r.to}
@@ -148,7 +117,7 @@ export function RunDiffPage() {
           <div className="space-y-2">
             {diff.improvements.map((r) => (
               <DiffCard
-                key={r.url}
+                key={r.key}
                 url={r.url}
                 a={r.from}
                 b={r.to}
@@ -158,7 +127,51 @@ export function RunDiffPage() {
           </div>
         </section>
       )}
+
+      {diff.changed.length > 0 && (
+        <section>
+          <h3 className="text-lg font-semibold mb-2">Changed ({diff.changed.length})</h3>
+          <p className="text-xs text-muted-foreground mb-2">
+            Same pass/fail state, but the error or individual check results differ.
+          </p>
+          <div className="space-y-2">
+            {diff.changed.map((r) => (
+              <DiffCard key={r.key} url={r.url} a={r.from} b={r.to} type="changed" />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <UrlListSection title="New URLs" entries={diff.added} />
+      <UrlListSection title="Removed URLs" entries={diff.removed} />
     </div>
+  )
+}
+
+function UrlListSection({ title, entries }: { title: string; entries: DiffSingle[] }) {
+  if (entries.length === 0) return null
+  return (
+    <section>
+      <h3 className="text-lg font-semibold mb-2">
+        {title} ({entries.length})
+      </h3>
+      <ul className="border border-border rounded-lg divide-y divide-border text-sm">
+        {entries.map((e) => (
+          <li key={e.key} className="flex items-center justify-between gap-4 px-4 py-2">
+            <button
+              onClick={() => openExternal(e.url)}
+              className="font-mono text-primary hover:underline truncate text-left"
+              title={e.url}
+            >
+              {e.url}
+            </button>
+            <span className="text-xs text-muted-foreground shrink-0">
+              {pageOutcome(e.result)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -171,15 +184,20 @@ function DiffCard({
   url: string
   a: PageResult
   b: PageResult
-  type: 'regression' | 'improvement'
+  type: 'regression' | 'improvement' | 'changed'
 }) {
-  const colorClass = type === 'regression' ? 'border-destructive/30 bg-destructive/5' : 'border-success/30 bg-success/5'
+  const colorClass =
+    type === 'regression'
+      ? 'border-destructive/30 bg-destructive/5'
+      : type === 'improvement'
+        ? 'border-success/30 bg-success/5'
+        : 'border-border'
 
   return (
     <div className={`border rounded-lg p-4 space-y-2 ${colorClass}`}>
       <div className="flex items-center justify-between gap-4">
         <button
-          onClick={() => openUrl(url)}
+          onClick={() => openExternal(url)}
           className="text-sm font-mono text-primary hover:underline truncate cursor-pointer"
           title={url}
         >
@@ -191,7 +209,7 @@ function DiffCard({
       </div>
       <div className="grid grid-cols-2 gap-4 text-xs">
         <div>
-          <span className="font-medium text-muted-foreground">Run A</span>
+          <span className="font-medium text-muted-foreground">Before</span>
           {a.error ? (
             <p className="text-destructive mt-1">{a.error}</p>
           ) : (
@@ -210,7 +228,7 @@ function DiffCard({
           )}
         </div>
         <div>
-          <span className="font-medium text-muted-foreground">Run B</span>
+          <span className="font-medium text-muted-foreground">After</span>
           {b.error ? (
             <p className="text-destructive mt-1">{b.error}</p>
           ) : (

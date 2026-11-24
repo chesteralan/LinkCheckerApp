@@ -9,25 +9,55 @@ export function LinkCheckHistoryPage() {
   const [scans, setScans] = useState<LinkCheckScanInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState<LinkCheckScanInfo | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   async function refresh() {
-    setScans(await listLinkCheckScans())
-    setLoading(false)
+    try {
+      setScans(await listLinkCheckScans())
+      setError(null)
+    } catch (e) {
+      setError(`Could not load scan history: ${String(e)}`)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
-    refresh().catch(() => setLoading(false))
+    let active = true
+    listLinkCheckScans()
+      .then((s) => {
+        if (active) setScans(s)
+      })
+      .catch((e) => {
+        if (active) setError(`Could not load scan history: ${String(e)}`)
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
   }, [])
 
   async function handleDelete() {
     if (!deleting) return
-    await deleteLinkCheckScan(deleting.id)
+    const target = deleting
     setDeleting(null)
+    try {
+      await deleteLinkCheckScan(target.id)
+    } catch (e) {
+      setError(`Could not delete the scan for ${target.url}: ${String(e)}`)
+      return
+    }
     await refresh()
   }
 
   if (loading) {
-    return <div className="text-muted-foreground">Loading...</div>
+    return (
+      <div className="text-muted-foreground" role="status">
+        Loading...
+      </div>
+    )
   }
 
   return (
@@ -41,6 +71,15 @@ export function LinkCheckHistoryPage() {
         </div>
       </div>
 
+      {error && (
+        <div
+          role="alert"
+          className="border border-destructive/40 bg-destructive/5 rounded-lg p-3 text-sm text-destructive"
+        >
+          {error}
+        </div>
+      )}
+
       {scans.length === 0 ? (
         <p className="text-muted-foreground text-sm">No scans yet. Run a link check to see results here.</p>
       ) : (
@@ -53,7 +92,9 @@ export function LinkCheckHistoryPage() {
                 <th className="px-4 py-2 font-medium w-24">Links</th>
                 <th className="px-4 py-2 font-medium w-24">Broken</th>
                 <th className="px-4 py-2 font-medium w-24">A11y</th>
-                <th className="px-4 py-2 font-medium w-28"></th>
+                <th className="px-4 py-2 font-medium w-28">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -88,14 +129,18 @@ export function LinkCheckHistoryPage() {
                   </td>
                   <td className="px-4 py-2.5 text-right whitespace-nowrap">
                     <button
+                      type="button"
                       onClick={() => navigate(`/link-checker/history/${s.id}`)}
                       className="text-primary hover:underline text-xs font-medium mr-3"
+                      aria-label={`View scan of ${s.url}`}
                     >
                       View
                     </button>
                     <button
+                      type="button"
                       onClick={() => setDeleting(s)}
                       className="text-destructive hover:underline text-xs"
+                      aria-label={`Delete scan of ${s.url}`}
                     >
                       Delete
                     </button>

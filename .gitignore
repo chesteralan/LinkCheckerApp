@@ -1,6 +1,11 @@
 node_modules/
 build/
 dist/
+coverage/
 src-tauri/target/
 .DS_Store
 *.log
+
+# Release artifacts: publish as GitHub Release assets, not in git
+download/
+*.dmg

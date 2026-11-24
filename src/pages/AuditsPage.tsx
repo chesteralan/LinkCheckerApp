@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useMemo, useId } from 'react'
+import { Link } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { Modal } from '@/components/Modal'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 
 const modes = [
   { value: 'sequential', label: 'Sequential (1 at a time)' },
@@ -10,7 +11,7 @@ const modes = [
 ] as const
 
 export function AuditsPage() {
-  const navigate = useNavigate()
+  const formId = useId()
   const { audits, targetLists, checkTemplates, loading, createAudit, updateAudit, deleteAudit } = useStore()
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
@@ -22,6 +23,9 @@ export function AuditsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [folderFilter, setFolderFilter] = useState('')
   const [folderName, setFolderName] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [creating, setCreating] = useState(false)
 
   const folders = useMemo(() => {
     const f = new Set<string>()
@@ -40,24 +44,76 @@ export function AuditsPage() {
     setShowForm(false)
   }
 
+  const visibleAudits = useMemo(
+    () =>
+      [...audits]
+        .filter((a) => !folderFilter || a.folder === folderFilter)
+        .sort((a, b) => Number(b.pinned) - Number(a.pinned)),
+    [audits, folderFilter],
+  )
+  // Only act on selected items the user can still see (A-29).
+  const selectedVisible = visibleAudits.filter((a) => selectedIds.has(a.id))
+
+  function changeFolderFilter(f: string) {
+    setFolderFilter(f)
+    setSelectedIds(new Set())
+  }
+
   async function handleCreate() {
-    if (!name.trim() || !targetListId || !checkTemplateId) return
-    await createAudit(name, targetListId, checkTemplateId, {
-      mode,
-      batchSize,
-      timeoutSecs,
-      headers: {},
-      cookies: [],
-    }, undefined, undefined, folderName || undefined)
-    resetForm()
+    if (!name.trim() || !targetListId || !checkTemplateId || creating) return
+    setCreating(true)
+    setError(null)
+    try {
+      await createAudit(
+        name.trim(),
+        targetListId,
+        checkTemplateId,
+        {
+          mode,
+          batchSize: Math.max(1, batchSize || 1),
+          timeoutSecs: Math.max(1, timeoutSecs || 1),
+          headers: {},
+          cookies: [],
+        },
+        undefined,
+        undefined,
+        folderName.trim() || undefined,
+      )
+      resetForm()
+    } catch (e) {
+      setError(`Could not create the audit: ${String(e)}`)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function handleBulkDelete() {
+    setConfirmBulkDelete(false)
+    setError(null)
+    const failures: string[] = []
+    for (const a of selectedVisible) {
+      try {
+        await deleteAudit(a.id)
+      } catch (e) {
+        failures.push(`${a.name}: ${String(e)}`)
+      }
+    }
+    setSelectedIds(new Set())
+    if (failures.length > 0) setError(`Some audits could not be deleted. ${failures.join('; ')}`)
+  }
+
+  async function togglePin(id: string, pinned: boolean) {
+    setError(null)
+    try {
+      await updateAudit(id, { pinned: !pinned })
+    } catch (e) {
+      setError(`Could not update the audit: ${String(e)}`)
+    }
   }
 
   useHotkeys(
     {
-      'Cmd+Enter': () => {
-        if (showForm) handleCreate()
-      },
-      'Ctrl+Enter': () => {
+      'Mod+Enter': () => {
         if (showForm) handleCreate()
       },
     },
@@ -88,6 +144,7 @@ export function AuditsPage() {
           <input
             type="text"
             placeholder="Audit name"
+            aria-label="Audit name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoFocus
@@ -96,8 +153,9 @@ export function AuditsPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm text-muted-foreground block mb-1">Target List</label>
+              <label htmlFor={`${formId}-tl`} className="text-sm text-muted-foreground block mb-1">Target List</label>
               <select
+                id={`${formId}-tl`}
                 value={targetListId}
                 onChange={(e) => setTargetListId(e.target.value)}
                 className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
@@ -111,8 +169,9 @@ export function AuditsPage() {
               </select>
             </div>
             <div>
-              <label className="text-sm text-muted-foreground block mb-1">Check Template</label>
+              <label htmlFor={`${formId}-ct`} className="text-sm text-muted-foreground block mb-1">Check Template</label>
               <select
+                id={`${formId}-ct`}
                 value={checkTemplateId}
                 onChange={(e) => setCheckTemplateId(e.target.value)}
                 className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
@@ -129,8 +188,9 @@ export function AuditsPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm text-muted-foreground block mb-1">Mode</label>
+              <label htmlFor={`${formId}-mode`} className="text-sm text-muted-foreground block mb-1">Mode</label>
               <select
+                id={`${formId}-mode`}
                 value={mode}
                 onChange={(e) => setMode(e.target.value as 'sequential' | 'batch')}
                 className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
@@ -144,8 +204,9 @@ export function AuditsPage() {
             </div>
             {mode === 'batch' && (
               <div>
-                <label className="text-sm text-muted-foreground block mb-1">Batch Size</label>
+                <label htmlFor={`${formId}-batch`} className="text-sm text-muted-foreground block mb-1">Batch Size</label>
                 <input
+                  id={`${formId}-batch`}
                   type="number"
                   min={1}
                   max={20}
@@ -156,8 +217,9 @@ export function AuditsPage() {
               </div>
             )}
             <div>
-              <label className="text-sm text-muted-foreground block mb-1">Timeout (seconds)</label>
+              <label htmlFor={`${formId}-timeout`} className="text-sm text-muted-foreground block mb-1">Timeout (seconds)</label>
               <input
+                id={`${formId}-timeout`}
                 type="number"
                 min={1}
                 max={120}
@@ -169,8 +231,9 @@ export function AuditsPage() {
           </div>
 
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">Folder</label>
+            <label htmlFor={`${formId}-folder`} className="text-sm text-muted-foreground block mb-1">Folder</label>
             <input
+              id={`${formId}-folder`}
               type="text"
               placeholder="e.g. Production, Staging"
               value={folderName}
@@ -186,7 +249,7 @@ export function AuditsPage() {
           <div className="flex gap-2">
             <button
               onClick={handleCreate}
-              disabled={!name.trim() || !targetListId || !checkTemplateId}
+              disabled={!name.trim() || !targetListId || !checkTemplateId || creating}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               Create
@@ -201,16 +264,17 @@ export function AuditsPage() {
         </div>
       </Modal>
 
-      {selectedIds.size > 0 && (
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+
+      {selectedVisible.length > 0 && (
         <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-md text-sm">
-          <span className="text-muted-foreground">{selectedIds.size} selected</span>
+          <span className="text-muted-foreground">{selectedVisible.length} selected</span>
           <button
-            onClick={async () => {
-              for (const id of selectedIds) {
-                await deleteAudit(id)
-              }
-              setSelectedIds(new Set())
-            }}
+            onClick={() => setConfirmBulkDelete(true)}
             className="ml-auto px-3 py-1 text-xs border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
           >
             Delete Selected
@@ -223,11 +287,11 @@ export function AuditsPage() {
 
       {folders.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          <button onClick={() => setFolderFilter('')} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${!folderFilter ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+          <button onClick={() => changeFolderFilter('')} aria-pressed={!folderFilter} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${!folderFilter ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
             All
           </button>
           {folders.map((f) => (
-            <button key={f} onClick={() => setFolderFilter(f)} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${folderFilter === f ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
+            <button key={f} onClick={() => changeFolderFilter(f)} aria-pressed={folderFilter === f} className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${folderFilter === f ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
               {f}
             </button>
           ))}
@@ -235,14 +299,11 @@ export function AuditsPage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {[...audits]
-          .filter((a) => !folderFilter || a.folder === folderFilter)
-          .sort((a, b) => Number(b.pinned) - Number(a.pinned))
-          .map((audit) => {
+        {visibleAudits.map((audit) => {
           const tl = targetLists.find((t) => t.id === audit.targetListId)
           const ct = checkTemplates.find((c) => c.id === audit.checkTemplateId)
           return (
-            <div key={audit.id} className="border border-border rounded-lg p-4 hover:border-primary transition-colors relative">
+            <div key={audit.id} className="border border-border rounded-lg p-4 hover:border-primary focus-within:border-primary transition-colors relative">
               <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
@@ -253,20 +314,29 @@ export function AuditsPage() {
                     else next.add(audit.id)
                     setSelectedIds(next)
                   }}
-                  className="accent-primary mt-0.5 shrink-0"
+                  aria-label={`Select ${audit.name}`}
+                  className="accent-primary mt-0.5 shrink-0 relative z-10"
                 />
-                <div className="flex-1 cursor-pointer" onClick={() => navigate(`/audits/${audit.id}`)}>
+                <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-medium">{audit.name}{audit.folder && <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{audit.folder}</span>}</h3>
+                    <h3 className="font-medium">
+                      {/* Stretched link: the whole card is clickable, and it is a real link for keyboard and screen readers (A-31). */}
+                      <Link
+                        to={`/audits/${audit.id}`}
+                        className="after:absolute after:inset-0 after:content-[''] focus:outline-none focus-visible:underline"
+                      >
+                        {audit.name}
+                      </Link>
+                      {audit.folder && <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{audit.folder}</span>}
+                    </h3>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        updateAudit(audit.id, { pinned: !audit.pinned })
-                      }}
-                      className="text-sm hover:scale-110 transition-transform"
+                      onClick={() => togglePin(audit.id, audit.pinned)}
+                      className="text-sm hover:scale-110 transition-transform relative z-10"
                       title={audit.pinned ? 'Unpin' : 'Pin'}
+                      aria-label={audit.pinned ? `Unpin ${audit.name}` : `Pin ${audit.name}`}
+                      aria-pressed={audit.pinned}
                     >
-                      {audit.pinned ? '★' : '☆'}
+                      <span aria-hidden="true">{audit.pinned ? '★' : '☆'}</span>
                     </button>
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">
@@ -288,6 +358,16 @@ export function AuditsPage() {
           <p className="text-muted-foreground text-sm col-span-2">No audits yet. Create one to get started.</p>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title="Delete Audits"
+        message={`Delete ${selectedVisible.length} audit${selectedVisible.length === 1 ? '' : 's'} and their saved runs? ${selectedVisible
+          .map((a) => a.name)
+          .join(', ')}`}
+        onConfirm={handleBulkDelete}
+        onCancel={() => setConfirmBulkDelete(false)}
+      />
     </div>
   )
 }

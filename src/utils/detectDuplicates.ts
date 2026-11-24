@@ -1,4 +1,4 @@
-import type { TargetList, CheckTemplate } from '@/types'
+import type { TargetList, CheckTemplate, SelectorCheck } from '@/types'
 
 export function findDuplicateLists(lists: TargetList[]): Map<string, string[]> {
   const byUrls = new Map<string, string[]>()
@@ -16,7 +16,7 @@ export function findDuplicateLists(lists: TargetList[]): Map<string, string[]> {
   return dupes
 }
 
-function checkKey(c: { selector: string; label: string; checkType: string; pattern?: string; attributeName?: string; attributeValue?: string; expectedStatus?: number }): string {
+function checkKey(c: SelectorCheck): string {
   return [c.selector, c.label, c.checkType, c.pattern ?? '', c.attributeName ?? '', c.attributeValue ?? '', c.expectedStatus ?? ''].join('\x00')
 }
 

@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '@/hooks/useStore'
 import { Modal } from '@/components/Modal'
+import { A11yCategoryPicker } from '@/components/A11yCategoryPicker'
+import { A11Y_SEVERITIES, A11Y_STANDARDS } from '@/utils/constants'
 import { scrapeSelectors } from '@/lib/tauri'
 import type { SelectorCheck, CheckType, A11yCheckConfig } from '@/types'
 import { defaultCheck } from '@/types'
@@ -15,37 +17,11 @@ const CHECK_TYPE_OPTIONS: { value: CheckType; label: string }[] = [
   { value: 'javascript', label: 'JavaScript' },
 ]
 
-const A11Y_CATEGORIES: { value: string; label: string }[] = [
-  { value: 'document', label: 'Document' },
-  { value: 'headings', label: 'Headings' },
-  { value: 'landmarks', label: 'Landmarks' },
-  { value: 'aria', label: 'ARIA' },
-  { value: 'interactive', label: 'Interactive' },
-  { value: 'media', label: 'Media' },
-  { value: 'tables', label: 'Tables' },
-  { value: 'forms', label: 'Forms' },
-]
-
-const A11Y_STANDARDS: { value: string; label: string }[] = [
-  { value: 'wcag20', label: 'WCAG 2.0' },
-  { value: 'wcag21', label: 'WCAG 2.1' },
-  { value: 'wcag22', label: 'WCAG 2.2' },
-  { value: 'section508', label: 'Section 508' },
-  { value: 'en301549', label: 'EN 301 549' },
-  { value: 'bestpractice', label: 'Best practices' },
-]
-
-const A11Y_SEVERITIES: { value: A11yCheckConfig['minSeverity']; label: string }[] = [
-  { value: 'minor', label: 'All issues' },
-  { value: 'moderate', label: 'Moderate and above' },
-  { value: 'serious', label: 'Serious and above' },
-  { value: 'critical', label: 'Critical only' },
-]
-
 export function CheckTemplateDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { checkTemplates, patchCheckTemplate } = useStore()
+  const { checkTemplates, patchCheckTemplate, loading, saveError, clearSaveError } = useStore()
+  const uid = useId()
   const template = checkTemplates.find((ct) => ct.id === id)
   const checks = template?.checks ?? []
 
@@ -58,6 +34,11 @@ export function CheckTemplateDetailPage() {
   const [scanning, setScanning] = useState(false)
   const [scanResults, setScanResults] = useState<{ selector: string; typeName: string }[]>([])
   const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [scanError, setScanError] = useState<string | null>(null)
+
+  if (loading) {
+    return <div className="text-muted-foreground">Loading...</div>
+  }
 
   if (!template) {
     return <div className="text-muted-foreground">Template not found.</div>
@@ -66,6 +47,8 @@ export function CheckTemplateDetailPage() {
   const existingSelectors = new Set(checks.map((c) => c.selector))
   const filteredScanResults = scanResults.filter((sr) => !existingSelectors.has(sr.selector))
 
+  // Saves are debounced by the store, which keeps each check's id and adopts the
+  // template the backend returns (A-03). Failures roll back and set saveError.
   function persist(updated: SelectorCheck[]) {
     patchCheckTemplate(t.id, { checks: updated })
   }
@@ -115,6 +98,7 @@ export function CheckTemplateDetailPage() {
     if (urls.length === 0) return
     setScanning(true)
     setScanResults([])
+    setScanError(null)
     try {
       const results = await scrapeSelectors(urls, {
         selectIds: scanIds,
@@ -125,6 +109,7 @@ export function CheckTemplateDetailPage() {
       setScanResults(results)
     } catch (e) {
       console.error(e)
+      setScanError(`Scan failed: ${String(e)}`)
     } finally {
       setScanning(false)
     }
@@ -146,6 +131,15 @@ export function CheckTemplateDetailPage() {
           Scan Selectors
         </button>
       </div>
+
+      {saveError && (
+        <div role="alert" className="flex items-center justify-between gap-2 text-sm text-destructive">
+          <span>Your last change could not be saved and was undone: {saveError}</span>
+          <button onClick={clearSaveError} className="text-xs underline hover:no-underline">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="space-y-2">
         {checks.length === 0 && (
@@ -180,6 +174,7 @@ export function CheckTemplateDetailPage() {
                 {index + 1}
               </span>
               <select
+                aria-label={`Check ${index + 1} type`}
                 value={check.checkType}
                 onChange={(e) => {
                   const ct = e.target.value as CheckType
@@ -203,8 +198,9 @@ export function CheckTemplateDetailPage() {
             <div className="space-y-3">
               <div className="grid grid-cols-[1fr_auto] gap-3 items-start">
                 <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Label</label>
+                  <label htmlFor={`${uid}-${check.id}-label`} className="text-xs text-muted-foreground block mb-1">Label</label>
                   <input
+                    id={`${uid}-${check.id}-label`}
                     type="text"
                     value={check.label}
                     onChange={(e) => updateCheck(index, 'label', e.target.value)}
@@ -218,25 +214,29 @@ export function CheckTemplateDetailPage() {
                     disabled={index === 0}
                     className="px-2 py-1.5 text-xs border border-border rounded hover:bg-muted disabled:opacity-30 transition-colors"
                     title="Move up"
-                  >↑</button>
+                    aria-label={`Move check ${index + 1} up`}
+                  ><span aria-hidden="true">↑</span></button>
                   <button
                     onClick={() => moveDown(index)}
                     disabled={index === checks.length - 1}
                     className="px-2 py-1.5 text-xs border border-border rounded hover:bg-muted disabled:opacity-30 transition-colors"
                     title="Move down"
-                  >↓</button>
+                    aria-label={`Move check ${index + 1} down`}
+                  ><span aria-hidden="true">↓</span></button>
                   <button
                     onClick={() => removeCheck(index)}
                     className="px-2 py-1.5 text-xs border border-destructive text-destructive rounded hover:bg-destructive/10 transition-colors"
                     title="Remove"
-                  >✕</button>
+                    aria-label={`Remove check ${index + 1}${check.label ? ` (${check.label})` : ''}`}
+                  ><span aria-hidden="true">✕</span></button>
                 </div>
               </div>
 
               {check.checkType === 'selector' && (
                 <div>
-                  <label className="text-xs text-muted-foreground block mb-1">CSS Selector</label>
+                  <label htmlFor={`${uid}-${check.id}-selector`} className="text-xs text-muted-foreground block mb-1">CSS Selector</label>
                   <input
+                    id={`${uid}-${check.id}-selector`}
                     type="text"
                     value={check.selector}
                     onChange={(e) => updateCheck(index, 'selector', e.target.value)}
@@ -248,8 +248,9 @@ export function CheckTemplateDetailPage() {
 
               {check.checkType === 'status' && (
                 <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Expected HTTP Status</label>
+                  <label htmlFor={`${uid}-${check.id}-status`} className="text-xs text-muted-foreground block mb-1">Expected HTTP Status</label>
                   <input
+                    id={`${uid}-${check.id}-status`}
                     type="number"
                     value={check.expectedStatus ?? 200}
                     onChange={(e) => updateCheck(index, 'expectedStatus', parseInt(e.target.value, 10) || 200)}
@@ -263,8 +264,9 @@ export function CheckTemplateDetailPage() {
 
               {check.checkType === 'regex' && (
                 <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Regex Pattern</label>
+                  <label htmlFor={`${uid}-${check.id}-pattern`} className="text-xs text-muted-foreground block mb-1">Regex Pattern</label>
                   <input
+                    id={`${uid}-${check.id}-pattern`}
                     type="text"
                     value={check.pattern ?? ''}
                     onChange={(e) => updateCheck(index, 'pattern', e.target.value)}
@@ -277,8 +279,9 @@ export function CheckTemplateDetailPage() {
               {check.checkType === 'attribute' && (
                 <div className="grid grid-cols-[1fr_1fr_1fr] gap-3">
                   <div>
-                    <label className="text-xs text-muted-foreground block mb-1">CSS Selector</label>
+                    <label htmlFor={`${uid}-${check.id}-selector`} className="text-xs text-muted-foreground block mb-1">CSS Selector</label>
                     <input
+                      id={`${uid}-${check.id}-selector`}
                       type="text"
                       value={check.selector}
                       onChange={(e) => updateCheck(index, 'selector', e.target.value)}
@@ -287,8 +290,9 @@ export function CheckTemplateDetailPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground block mb-1">Attribute Name</label>
+                    <label htmlFor={`${uid}-${check.id}-attr-name`} className="text-xs text-muted-foreground block mb-1">Attribute Name</label>
                     <input
+                      id={`${uid}-${check.id}-attr-name`}
                       type="text"
                       value={check.attributeName ?? ''}
                       onChange={(e) => updateCheck(index, 'attributeName', e.target.value)}
@@ -297,8 +301,9 @@ export function CheckTemplateDetailPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground block mb-1">Expected Value (optional)</label>
+                    <label htmlFor={`${uid}-${check.id}-attr-value`} className="text-xs text-muted-foreground block mb-1">Expected Value (optional)</label>
                     <input
+                      id={`${uid}-${check.id}-attr-value`}
                       type="text"
                       value={check.attributeValue ?? ''}
                       onChange={(e) => updateCheck(index, 'attributeValue', e.target.value)}
@@ -315,8 +320,9 @@ export function CheckTemplateDetailPage() {
                     Scans each page for WCAG issues. The check passes when no issues are found at or above the selected severity.
                   </p>
                   <div>
-                    <label className="text-xs text-muted-foreground block mb-1">Minimum severity</label>
+                    <label htmlFor={`${uid}-${check.id}-severity`} className="text-xs text-muted-foreground block mb-1">Minimum severity</label>
                     <select
+                      id={`${uid}-${check.id}-severity`}
                       value={check.a11yConfig?.minSeverity ?? 'minor'}
                       onChange={(e) => updateA11yConfig(index, { minSeverity: e.target.value as A11yCheckConfig['minSeverity'] })}
                       className="text-xs border border-border rounded px-2 py-1 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
@@ -326,37 +332,17 @@ export function CheckTemplateDetailPage() {
                       ))}
                     </select>
                   </div>
+                  <A11yCategoryPicker
+                    legend="Rule categories"
+                    legendClassName="text-xs text-muted-foreground mb-1"
+                    value={check.a11yConfig?.categories ?? []}
+                    onChange={(categories) => updateA11yConfig(index, { categories })}
+                  />
                   <div>
-                    <label className="text-xs text-muted-foreground block mb-1">Rule categories (none selected = all)</label>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
-                      {A11Y_CATEGORIES.map((cat) => {
-                        const cats = check.a11yConfig?.categories ?? []
-                        const active = cats.length === 0 || cats.includes(cat.value)
-                        return (
-                          <label key={cat.value} className="flex items-center gap-1.5 text-xs">
-                            <input
-                              type="checkbox"
-                              checked={active}
-                              onChange={(e) => {
-                                const all = A11Y_CATEGORIES.map((c) => c.value)
-                                const base = cats.length === 0 ? all : cats
-                                const selected = e.target.checked
-                                  ? [...new Set([...base, cat.value])]
-                                  : base.filter((c) => c !== cat.value)
-                                updateA11yConfig(index, { categories: selected })
-                              }}
-                            />
-                            {cat.label}
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground block mb-1">
+                    <p id={`${uid}-${check.id}-stds`} className="text-xs text-muted-foreground block mb-1">
                       Standards (none selected = all)
-                    </label>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    </p>
+                    <div role="group" aria-labelledby={`${uid}-${check.id}-stds`} className="flex flex-wrap gap-x-4 gap-y-1">
                       {A11Y_STANDARDS.map((std) => {
                         const stds = check.a11yConfig?.standards ?? []
                         return (
@@ -382,8 +368,9 @@ export function CheckTemplateDetailPage() {
 
               {check.checkType === 'javascript' && (
                 <div>
-                  <label className="text-xs text-muted-foreground block mb-1">JS Snippet (must evaluate to true/false)</label>
+                  <label htmlFor={`${uid}-${check.id}-js`} className="text-xs text-muted-foreground block mb-1">JS Snippet (must evaluate to true/false)</label>
                   <textarea
+                    id={`${uid}-${check.id}-js`}
                     value={check.pattern ?? ''}
                     onChange={(e) => updateCheck(index, 'pattern', e.target.value)}
                     placeholder={'pageText.includes("Welcome");'}
@@ -417,8 +404,9 @@ export function CheckTemplateDetailPage() {
       >
         <div className="space-y-4">
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">Page URLs (one per line)</label>
+            <label htmlFor={`${uid}-scan-urls`} className="text-sm text-muted-foreground block mb-1">Page URLs (one per line)</label>
             <textarea
+              id={`${uid}-scan-urls`}
               placeholder="https://example.com&#10;https://example.org"
               value={scanUrls}
               onChange={(e) => setScanUrls(e.target.value)}
@@ -441,8 +429,9 @@ export function CheckTemplateDetailPage() {
             </label>
           </div>
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">Custom selector (optional)</label>
+            <label htmlFor={`${uid}-scan-custom`} className="text-sm text-muted-foreground block mb-1">Custom selector (optional)</label>
             <input
+              id={`${uid}-scan-custom`}
               type="text"
               placeholder="e.g. [data-cy]"
               value={scanCustom}
@@ -457,6 +446,12 @@ export function CheckTemplateDetailPage() {
           >
             {scanning ? 'Scanning...' : 'Scan'}
           </button>
+
+          {scanError && (
+            <p role="alert" className="text-sm text-destructive">
+              {scanError}
+            </p>
+          )}
 
           {scanResults.length > 0 && (
             <div>
@@ -489,7 +484,7 @@ export function CheckTemplateDetailPage() {
                           }}
                           className="text-xs text-primary hover:underline shrink-0"
                         >
-                          Add
+                          Add<span className="sr-only"> {sr.selector}</span>
                         </button>
                       </div>
                     ))}

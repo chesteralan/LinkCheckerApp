@@ -1,8 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getA11yReport, listA11yAudits, listA11yReports, writeFile, deleteA11yReport } from '@/lib/tauri'
-import { save } from '@tauri-apps/plugin-dialog'
-import { openUrl } from '@tauri-apps/plugin-opener'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import {
+  getA11yReport,
+  listA11yAudits,
+  listA11yReports,
+  saveTextFile,
+  deleteA11yReport,
+  rerunA11yPages,
+  cancelA11yRun,
+} from '@/lib/tauri'
+import { openExternal } from '@/lib/openExternal'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { A11yIssuesList, A11ySeverityBadge } from '@/components/A11yIssuesList'
 import { Modal } from '@/components/Modal'
@@ -10,7 +18,8 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { reportScore, scoreColor } from '@/utils/a11yScore'
 import { standardsLabel } from '@/utils/a11yStandards'
 import { a11yReportToHtml } from '@/lib/a11yReportHtml'
-import type { A11yReport, A11yIssue, A11yReportInfo } from '@/types'
+import { toCsv, type CsvCell } from '@/utils/csv'
+import type { A11yReport, A11yIssue, A11yReportInfo, A11yProgressEvent } from '@/types'
 
 const SEVERITY_FILTERS = ['all', 'critical', 'serious', 'moderate', 'minor'] as const
 
@@ -26,18 +35,44 @@ export function A11yReportPage() {
   const [trend, setTrend] = useState<{ date: string; score: number }[]>([])
   const [siblingReports, setSiblingReports] = useState<A11yReportInfo[]>([])
   const [showCompare, setShowCompare] = useState(false)
+  const [rerunning, setRerunning] = useState(false)
+  const [retryingUrl, setRetryingUrl] = useState<string | null>(null)
+  const [rerunError, setRerunError] = useState<string | null>(null)
+  const [rerunProgress, setRerunProgress] = useState<{ checked: number; total: number } | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  // Which reportId the current `report`/`loadError` belong to.
+  const [loadedId, setLoadedId] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const rerunUnlisten = useRef<UnlistenFn | null>(null)
+
+  // Drop the re-run progress listener on unmount.
+  useEffect(
+    () => () => {
+      rerunUnlisten.current?.()
+      rerunUnlisten.current = null
+    },
+    [],
+  )
 
   useEffect(() => {
     if (!reportId) return
+    let active = true
     getA11yReport(reportId)
       .then(async (r) => {
+        if (!active) return
         setReport(r)
+        setLoadError(null)
+        setLoadedId(reportId)
+        setTrend([])
+        setSiblingReports([])
         const audits = await listA11yAudits().catch(() => [])
+        if (!active) return
         setAuditName(audits.find((a) => a.id === r.auditId)?.name ?? '')
 
         const infos = (await listA11yReports().catch(() => []))
           .filter((i) => i.auditId === r.auditId)
-          .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+          .sort((a, b) => b.timestampMs - a.timestampMs)
+        if (!active) return
         setSiblingReports(infos.filter((i) => i.id !== r.id))
 
         const recent = infos.slice(0, 8)
@@ -48,9 +83,18 @@ export function A11yReportPage() {
             return score != null ? { date: i.startedAt.slice(0, 10), score } : null
           }),
         )
+        if (!active) return
         setTrend(scored.filter((x): x is { date: string; score: number } => x !== null).reverse())
       })
-      .catch(() => setReport(null))
+      .catch((e) => {
+        if (!active) return
+        setReport(null)
+        setLoadError(String(e))
+        setLoadedId(reportId)
+      })
+    return () => {
+      active = false
+    }
   }, [reportId])
 
   const filteredResults = useMemo(() => {
@@ -74,45 +118,115 @@ export function A11yReportPage() {
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [allIssues])
 
-  if (!report) return <div className="text-muted-foreground">Loading...</div>
+  if (reportId && loadedId !== reportId)
+    return (
+      <div className="text-muted-foreground" role="status">
+        Loading...
+      </div>
+    )
+  if (!report)
+    return (
+      <div className="space-y-4" role="alert">
+        <p className="text-muted-foreground">Could not load this report.</p>
+        {loadError && <p className="text-sm text-destructive">{loadError}</p>}
+        <button onClick={() => navigate('/accessibility')} className="text-sm text-primary hover:underline">
+          &larr; Accessibility
+        </button>
+      </div>
+    )
 
   const s = report.summary
   const score = reportScore(report)
 
+  async function exportFile(defaultName: string, content: string, filterName: string, ext: string) {
+    setActionError(null)
+    try {
+      await saveTextFile({ defaultName, content, filterName, extensions: [ext] })
+    } catch (e) {
+      setActionError(`Export failed: ${String(e)}`)
+    }
+  }
+
   async function handleExportHtml() {
     if (!report) return
-    const path = await save({
-      defaultPath: `a11y-report-${auditName || reportId}.html`,
-      filters: [{ name: 'HTML', extensions: ['html'] }],
-    })
-    if (!path) return
-    await writeFile(path, a11yReportToHtml(report, auditName))
+    await exportFile(`a11y-report-${auditName || reportId}.html`, a11yReportToHtml(report, auditName), 'HTML', 'html')
   }
 
   async function handleExport(format: 'json' | 'csv') {
     if (!report) return
-    const ext = format
-    const path = await save({
-      defaultPath: `a11y-report-${reportId}.${ext}`,
-      filters: [{ name: format.toUpperCase(), extensions: [ext] }],
-    })
-    if (!path) return
-    const content =
-      format === 'json'
-        ? JSON.stringify(report, null, 2)
-        : [
-            'URL,Page Title,Status,Response Time (ms),Error,Severity,WCAG,Element,Selector,Message',
-            ...report.results.flatMap((r) =>
-              r.issues.length > 0
-                ? r.issues.map((i) =>
-                    [r.url, r.pageTitle ?? '', r.status ?? '', r.responseTimeMs ?? '', r.error ?? '', i.severity ?? '', i.wcag ?? '', i.element, i.selector, i.message]
-                      .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-                      .join(',')
-                  )
-                : [[r.url, r.pageTitle ?? '', r.status ?? '', r.responseTimeMs ?? '', r.error ?? '', '', '', '', '', ''].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')]
-            ),
-          ].join('\n')
-    await writeFile(path, content)
+    let content: string
+    if (format === 'json') {
+      content = JSON.stringify(report, null, 2)
+    } else {
+      const header = [
+        'URL',
+        'Page Title',
+        'Status',
+        'Response Time (ms)',
+        'Error',
+        'Severity',
+        'WCAG',
+        'Element',
+        'Selector',
+        'Message',
+      ]
+      const rows: CsvCell[][] = report.results.flatMap((r) => {
+        const base: CsvCell[] = [r.url, r.pageTitle, r.status, r.responseTimeMs, r.error]
+        return r.issues.length > 0
+          ? r.issues.map((i) => [...base, i.severity, i.wcag, i.element, i.selector, i.message])
+          : [[...base, '', '', '', '', '']]
+      })
+      content = toCsv(header, rows)
+    }
+    await exportFile(`a11y-report-${reportId}.${format}`, content, format.toUpperCase(), format)
+  }
+
+  const erroredCount = report.results.filter((r) => r.error).length
+
+  async function handleRerun(urls?: string[]) {
+    if (!reportId || rerunning) return
+    setRerunning(true)
+    setRerunError(null)
+    setRerunProgress(null)
+    try {
+      // Re-runs emit only progress/result events (flagged rerun: true); the
+      // command's result is the terminal signal.
+      rerunUnlisten.current?.()
+      rerunUnlisten.current = await listen<A11yProgressEvent>('a11y:progress', (e) => {
+        if (e.payload.rerun && e.payload.reportId === reportId) {
+          setRerunProgress({ checked: e.payload.checked, total: e.payload.total })
+        }
+      })
+      const updated = await rerunA11yPages(reportId, urls)
+      setReport(updated)
+    } catch (e) {
+      setRerunError(String(e))
+    } finally {
+      rerunUnlisten.current?.()
+      rerunUnlisten.current = null
+      setRerunning(false)
+      setRerunProgress(null)
+      setRetryingUrl(null)
+    }
+  }
+
+  async function handleCancelRerun() {
+    try {
+      await cancelA11yRun()
+    } catch (e) {
+      setRerunError(`Could not cancel: ${String(e)}`)
+    }
+  }
+
+  async function handleDelete() {
+    if (!reportId) return
+    try {
+      await deleteA11yReport(reportId)
+      navigate('/accessibility')
+    } catch (e) {
+      setConfirmDelete(false)
+      setActionError(`Could not delete report: ${String(e)}`)
+    }
   }
 
   return (
@@ -125,6 +239,28 @@ export function A11yReportPage() {
           <h2 className="text-2xl font-bold">{auditName || 'Accessibility Report'}</h2>
         </div>
         <div className="flex items-center gap-2">
+          {erroredCount > 0 && (
+            <button
+              type="button"
+              onClick={() => handleRerun()}
+              disabled={rerunning || report.status === 'running'}
+              className="text-xs px-3 py-1 border border-primary text-primary rounded-md hover:bg-primary/10 transition-colors disabled:opacity-50"
+              title="Re-scan pages that failed with an error"
+            >
+              {rerunning
+                ? `Re-running…${rerunProgress ? ` ${rerunProgress.checked}/${rerunProgress.total}` : ''}`
+                : `Re-run failed (${erroredCount})`}
+            </button>
+          )}
+          {rerunning && (
+            <button
+              type="button"
+              onClick={handleCancelRerun}
+              className="text-xs px-3 py-1 border border-destructive text-destructive rounded-md hover:bg-destructive/10 transition-colors"
+            >
+              Cancel re-run
+            </button>
+          )}
           {siblingReports.length > 0 && (
             <button
               onClick={() => setShowCompare(true)}
@@ -133,13 +269,22 @@ export function A11yReportPage() {
               Compare
             </button>
           )}
-          <button onClick={handleExportHtml} className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors">
+          <button
+            onClick={handleExportHtml}
+            className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors"
+          >
             Export HTML
           </button>
-          <button onClick={() => handleExport('json')} className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors">
+          <button
+            onClick={() => handleExport('json')}
+            className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors"
+          >
             Export JSON
           </button>
-          <button onClick={() => handleExport('csv')} className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors">
+          <button
+            onClick={() => handleExport('csv')}
+            className="text-xs px-3 py-1 border border-border rounded-md hover:bg-muted transition-colors"
+          >
             Export CSV
           </button>
           <button
@@ -162,6 +307,21 @@ export function A11yReportPage() {
         </div>
       </div>
 
+      {(rerunError || actionError) && (
+        <div
+          role="alert"
+          className="border border-destructive/40 bg-destructive/5 rounded-lg p-3 text-sm text-destructive space-y-1"
+        >
+          {rerunError && <p>Re-run failed: {rerunError}</p>}
+          {actionError && <p>{actionError}</p>}
+        </div>
+      )}
+      {rerunning && (
+        <p className="sr-only" role="status" aria-live="polite">
+          {rerunProgress ? `Re-running ${rerunProgress.checked} of ${rerunProgress.total} pages` : 'Re-running pages'}
+        </p>
+      )}
+
       <div className="text-sm text-muted-foreground flex items-center gap-3 flex-wrap">
         <span>
           {new Date(report.startedAt).toLocaleString()} · {s.totalPages} page{s.totalPages !== 1 ? 's' : ''}
@@ -170,8 +330,20 @@ export function A11yReportPage() {
         <span className="text-xs bg-muted px-2 py-0.5 rounded" title="Standards this report was audited against">
           {standardsLabel(report.standards)}
         </span>
+        {report.engine && (
+          <span
+            className="text-xs bg-muted px-2 py-0.5 rounded"
+            title="Engine this report was scanned with; re-runs use the same engine and rules"
+          >
+            {report.engine === 'axe-core' ? 'axe-core' : 'Static HTML'}
+            {report.minSeverity && report.minSeverity !== 'minor' ? ` · ${report.minSeverity}+` : ''}
+          </span>
+        )}
         {score != null && (
-          <span className={`text-lg font-bold ${scoreColor(score)}`} title="100 minus severity-weighted issue penalties, averaged across scanned pages">
+          <span
+            className={`text-lg font-bold ${scoreColor(score)}`}
+            title="100 minus severity-weighted issue penalties, averaged across scanned pages"
+          >
             {score}
             <span className="text-xs font-normal text-muted-foreground">/100</span>
           </span>
@@ -249,9 +421,13 @@ export function A11yReportPage() {
         {SEVERITY_FILTERS.map((f) => (
           <button
             key={f}
+            type="button"
+            aria-pressed={severityFilter === f}
             onClick={() => setSeverityFilter(f)}
             className={`px-3 py-1 text-xs rounded-full border transition-colors ${
-              severityFilter === f ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'
+              severityFilter === f
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'border-border hover:bg-muted'
             }`}
           >
             {f === 'all' ? 'All' : f}
@@ -260,6 +436,7 @@ export function A11yReportPage() {
         <input
           type="text"
           placeholder="Filter pages..."
+          aria-label="Filter pages"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="ml-auto px-3 py-1.5 border border-border rounded-md text-sm bg-background font-mono focus:outline-none focus:ring-2 focus:ring-primary w-64"
@@ -268,57 +445,92 @@ export function A11yReportPage() {
 
       <div className="space-y-2">
         {filteredResults.length > 0 ? (
-          filteredResults.map((r) => (
-            <div key={r.url} className="border border-border rounded-lg p-4 space-y-2">
-              <div
-                onClick={() => setExpanded(expanded === r.url ? null : r.url)}
-                className="w-full flex items-center justify-between gap-4 text-left cursor-pointer"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className={`w-2 h-2 shrink-0 rounded-full ${
-                      r.error ? 'bg-destructive' : r.issues.length > 0 ? 'bg-warning' : 'bg-success'
-                    }`}
-                  />
+          filteredResults.map((r, idx) => {
+            const isOpen = expanded === r.url
+            const panelId = `a11y-page-panel-${idx}`
+            return (
+              <div key={r.url} className="border border-border rounded-lg p-4 space-y-2">
+                <div className="w-full flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      aria-hidden="true"
+                      className={`w-2 h-2 shrink-0 rounded-full ${
+                        r.error ? 'bg-destructive' : r.issues.length > 0 ? 'bg-warning' : 'bg-success'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => openExternal(r.url)}
+                      className="text-sm font-mono text-primary hover:underline truncate"
+                      title={`Open ${r.url} in browser`}
+                    >
+                      {r.url}
+                    </button>
+                  </div>
                   <button
-                    onClick={(e) => { e.stopPropagation(); openUrl(r.url) }}
-                    className="text-sm font-mono text-primary hover:underline truncate"
-                    title={r.url}
+                    type="button"
+                    onClick={() => setExpanded(isOpen ? null : r.url)}
+                    aria-expanded={isOpen}
+                    aria-controls={panelId}
+                    aria-label={`${isOpen ? 'Hide' : 'Show'} details for ${r.url}`}
+                    className="flex items-center gap-3 shrink-0 text-xs text-muted-foreground hover:text-foreground rounded px-1"
                   >
-                    {r.url}
+                    {r.status != null && <span>{r.status}</span>}
+                    {r.responseTimeMs != null && <span>{r.responseTimeMs}ms</span>}
+                    {r.error ? (
+                      <span className="text-destructive">error</span>
+                    ) : r.issues.length > 0 ? (
+                      <span className="flex gap-1 items-center">
+                        {(['critical', 'serious', 'moderate', 'minor'] as const).map((sev) => {
+                          const n = r.issues.filter((i) => i.severity === sev).length
+                          return n > 0 ? (
+                            <span key={sev} className="inline-flex items-center gap-0.5">
+                              <A11ySeverityBadge severity={sev} />
+                              <span>×{n}</span>
+                            </span>
+                          ) : null
+                        })}
+                      </span>
+                    ) : (
+                      <span className="text-success">clean</span>
+                    )}
+                    <span aria-hidden="true">{isOpen ? '▲' : '▼'}</span>
                   </button>
                 </div>
-                <div className="flex items-center gap-3 shrink-0 text-xs text-muted-foreground">
-                  {r.status && <span>{r.status}</span>}
-                  {r.responseTimeMs != null && <span>{r.responseTimeMs}ms</span>}
-                  {r.issues.length > 0 ? (
-                    <span className="flex gap-1 items-center">
-                      {(['critical', 'serious', 'moderate', 'minor'] as const).map((sev) => {
-                        const n = r.issues.filter((i) => i.severity === sev).length
-                        return n > 0 ? (
-                          <span key={sev} className="inline-flex items-center gap-0.5">
-                            <A11ySeverityBadge severity={sev} />
-                            <span>×{n}</span>
-                          </span>
-                        ) : null
-                      })}
-                    </span>
-                  ) : (
-                    <span className="text-success">clean</span>
-                  )}
-                  <span>{expanded === r.url ? '▲' : '▼'}</span>
-                </div>
+                {r.error && (
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-destructive">{r.error}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRetryingUrl(r.url)
+                        handleRerun([r.url])
+                      }}
+                      disabled={rerunning || report.status === 'running'}
+                      aria-label={`Retry ${r.url}`}
+                      className="text-xs px-2 py-0.5 border border-border rounded hover:bg-muted transition-colors disabled:opacity-50"
+                    >
+                      {retryingUrl === r.url && rerunning ? 'Retrying…' : 'Retry'}
+                    </button>
+                  </div>
+                )}
+                {r.pageTitle && <p className="text-xs text-muted-foreground">{r.pageTitle}</p>}
+                {isOpen && (
+                  <div id={panelId}>
+                    {r.issues.length > 0 && <A11yIssuesList issues={r.issues} maxHeight="320px" />}
+                    {r.truncated && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Results truncated: the engine stopped recording issues for this page after its limit.
+                      </p>
+                    )}
+                    {r.issues.length === 0 && !r.error && (
+                      <p className="text-xs text-muted-foreground">No accessibility issues found.</p>
+                    )}
+                  </div>
+                )}
               </div>
-              {r.error && <p className="text-xs text-destructive">{r.error}</p>}
-              {r.pageTitle && <p className="text-xs text-muted-foreground">{r.pageTitle}</p>}
-              {expanded === r.url && r.issues.length > 0 && (
-                <A11yIssuesList issues={r.issues} maxHeight="320px" />
-              )}
-              {expanded === r.url && r.issues.length === 0 && !r.error && (
-                <p className="text-xs text-muted-foreground">No accessibility issues found.</p>
-              )}
-            </div>
-          ))
+            )
+          })
         ) : (
           <p className="text-sm text-muted-foreground">No pages match the current filter.</p>
         )}
@@ -329,7 +541,11 @@ export function A11yReportPage() {
           {siblingReports.map((r) => (
             <button
               key={r.id}
-              onClick={() => navigate(`/accessibility/reports/diff/${reportId}/${r.id}`)}
+              type="button"
+              onClick={() => {
+                setShowCompare(false)
+                navigate(`/accessibility/reports/diff/${reportId}/${r.id}`)
+              }}
               className="w-full text-left border border-border rounded-lg p-3 hover:border-primary transition-colors"
             >
               <div className="text-sm font-medium">{new Date(r.startedAt).toLocaleString()}</div>
@@ -342,12 +558,7 @@ export function A11yReportPage() {
       <ConfirmDialog
         open={confirmDelete}
         onCancel={() => setConfirmDelete(false)}
-        onConfirm={async () => {
-          if (reportId) {
-            await deleteA11yReport(reportId)
-            navigate('/accessibility')
-          }
-        }}
+        onConfirm={handleDelete}
         message="Delete this report? This cannot be undone."
       />
     </div>

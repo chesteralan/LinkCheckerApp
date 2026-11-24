@@ -1,18 +1,27 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chromiumoxide::browser::{Browser, BrowserConfig};
-use futures::StreamExt;
+use chromiumoxide::cdp::browser_protocol::network::{
+    CookieParam, EventResponseReceived, Headers, ResourceType, SetCookiesParams,
+    SetExtraHttpHeadersParams,
+};
+use chromiumoxide::Page;
+use futures::{FutureExt, StreamExt};
 use serde::Deserialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::AppHandle;
 
-use crate::a11y_runner::{apply_a11y_origin_override, apply_a11y_url_postfix};
+use crate::a11y_runner::{
+    build_report, effective_timeout_secs, emit_progress, emit_result, save_partial, target_urls,
+    CancelToken,
+};
 use crate::models::*;
-use crate::AppState;
 
 const AXE_SOURCE: &str = include_str!("../assets/axe.min.js");
+/// Custom rules for checks IBM Equal Access reports that axe misses (SVG
+/// names, ARIA ID references).
+const AXE_EXTRA_RULES: &str = include_str!("../assets/axe-extra-rules.js");
 const MAX_NODES_PER_VIOLATION: usize = 25;
 const MAX_TOTAL_ISSUES: usize = 1000;
 
@@ -187,8 +196,12 @@ fn node_selector(node: &AxeNode) -> String {
         .join(" ")
 }
 
-fn violations_to_issues(violations: &[AxeViolation]) -> Vec<A11yIssue> {
+/// Convert axe violations to issues, capping nodes per rule and the total per
+/// page. Returns `(issues, truncated)` where `truncated` is true if any cap
+/// dropped results.
+fn violations_to_issues(violations: &[AxeViolation]) -> (Vec<A11yIssue>, bool) {
     let mut issues = Vec::new();
+    let mut truncated = false;
     'outer: for v in violations {
         let wcag = wcag_from_tags(&v.tags);
         let standards = standards_from_tags(&v.tags);
@@ -196,16 +209,16 @@ fn violations_to_issues(violations: &[AxeViolation]) -> Vec<A11yIssue> {
         let message = v
             .help
             .clone()
-            .or_else(|| {
-                v.nodes
-                    .first()
-                    .and_then(|n| n.html.clone())
-                    .map(|_| String::new())
-            })
             .filter(|m| !m.is_empty())
             .unwrap_or_else(|| v.id.clone());
-        let nodes: Vec<&AxeNode> = v.nodes.iter().take(MAX_NODES_PER_VIOLATION).collect();
-        if nodes.is_empty() {
+        if v.nodes.len() > MAX_NODES_PER_VIOLATION {
+            truncated = true;
+        }
+        if v.nodes.is_empty() {
+            if issues.len() >= MAX_TOTAL_ISSUES {
+                truncated = true;
+                break 'outer;
+            }
             issues.push(A11yIssue {
                 issue_type: v.id.clone(),
                 element: "document".into(),
@@ -216,232 +229,426 @@ fn violations_to_issues(violations: &[AxeViolation]) -> Vec<A11yIssue> {
                 standards,
                 help_url: v.help_url.clone(),
             });
-        } else {
-            for node in nodes {
-                if issues.len() >= MAX_TOTAL_ISSUES {
-                    break 'outer;
-                }
-                issues.push(A11yIssue {
-                    issue_type: v.id.clone(),
-                    element: node
-                        .html
-                        .as_deref()
-                        .map(element_name_from_html)
-                        .unwrap_or_else(|| "unknown".into()),
-                    selector: node_selector(node),
-                    message: message.clone(),
-                    severity: severity.clone(),
-                    wcag: wcag.clone(),
-                    standards: standards.clone(),
-                    help_url: v.help_url.clone(),
-                });
+            continue;
+        }
+        for node in v.nodes.iter().take(MAX_NODES_PER_VIOLATION) {
+            if issues.len() >= MAX_TOTAL_ISSUES {
+                truncated = true;
+                break 'outer;
             }
+            issues.push(A11yIssue {
+                issue_type: v.id.clone(),
+                element: node
+                    .html
+                    .as_deref()
+                    .map(element_name_from_html)
+                    .unwrap_or_else(|| "unknown".into()),
+                selector: node_selector(node),
+                message: message.clone(),
+                severity: severity.clone(),
+                wcag: wcag.clone(),
+                standards: standards.clone(),
+                help_url: v.help_url.clone(),
+            });
         }
     }
-    issues
+    (issues, truncated)
 }
 
+/// Parse axe's JSON-serialised violations. A parse failure is an error (the
+/// page is recorded as errored and can be re-run) rather than "no violations".
+fn parse_violations(json: &str) -> Result<Vec<AxeViolation>, String> {
+    serde_json::from_str(json).map_err(|e| format!("parse axe results: {}", e))
+}
+
+// ─── Browser session ───
+
+/// Removes the temporary Chrome profile directory when dropped, including when
+/// launching the browser fails.
+struct TempDirGuard(PathBuf);
+
+impl Drop for TempDirGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+struct AxeSession {
+    browser: Browser,
+    handler: tokio::task::JoinHandle<()>,
+    // Declared last so it is dropped after the browser.
+    _profile: TempDirGuard,
+}
+
+impl AxeSession {
+    async fn launch(profile_tag: &str) -> Result<Self, String> {
+        let exe = find_browser_executable().ok_or_else(|| {
+            "No Chromium-based browser found. Install Chrome/Chromium or set A11Y_CHROME_PATH."
+                .to_string()
+        })?;
+
+        let dir = std::env::temp_dir().join(format!("a11y-profile-{}", profile_tag));
+        std::fs::create_dir_all(&dir).ok();
+        let profile = TempDirGuard(dir.clone());
+
+        let config = BrowserConfig::builder()
+            .chrome_executable(&exe)
+            .new_headless_mode()
+            .user_data_dir(&dir)
+            .hide()
+            .build()
+            .map_err(|e| format!("browser config: {}", e))?;
+
+        let (browser, mut handler) = Browser::launch(config)
+            .await
+            .map_err(|e| format!("failed to launch browser: {}", e))?;
+        let handler = tokio::spawn(async move { while handler.next().await.is_some() {} });
+
+        Ok(Self {
+            browser,
+            handler,
+            _profile: profile,
+        })
+    }
+
+    async fn shutdown(mut self) {
+        let _ = tokio::time::timeout(Duration::from_secs(5), self.browser.close()).await;
+        let _ = tokio::time::timeout(Duration::from_secs(5), self.browser.wait()).await;
+        self.handler.abort();
+        // `self` (browser, then profile dir guard) drops here.
+    }
+}
+
+fn page_timeout(config: &AuditConfig) -> Duration {
+    // Real browsers need longer than a plain HTTP fetch; keep the 15s floor.
+    Duration::from_secs(effective_timeout_secs(config).max(15))
+}
+
+fn errored_page(url: &str, start: Instant, error: String) -> A11yPageResult {
+    A11yPageResult {
+        url: url.to_string(),
+        page_title: None,
+        status: None,
+        status_text: "error".into(),
+        response_time_ms: Some(start.elapsed().as_millis() as u64),
+        error: Some(error),
+        issues: Vec::new(),
+        truncated: false,
+    }
+}
+
+/// Scan one URL in a fresh tab. The tab is always closed afterwards (also on
+/// timeout and cancel). Returns `None` when the job was cancelled before a
+/// result was produced.
+async fn scan_one(
+    browser: &Browser,
+    url: &str,
+    a11y_config: &A11yCheckConfig,
+    audit_config: &AuditConfig,
+    token: &CancelToken,
+) -> Option<A11yPageResult> {
+    if token.is_cancelled() {
+        return None;
+    }
+    let timeout = page_timeout(audit_config);
+    let start = Instant::now();
+
+    let page = tokio::select! {
+        biased;
+        _ = token.cancelled() => return None,
+        r = tokio::time::timeout(timeout, browser.new_page("about:blank")) => match r {
+            Ok(Ok(page)) => page,
+            Ok(Err(e)) => return Some(errored_page(url, start, format!("new page: {}", e))),
+            Err(_) => {
+                return Some(errored_page(
+                    url,
+                    start,
+                    format!("timed out opening a tab after {}s", timeout.as_secs()),
+                ))
+            }
+        },
+    };
+
+    let outcome = tokio::select! {
+        biased;
+        _ = token.cancelled() => None,
+        r = tokio::time::timeout(
+            timeout,
+            scan_page(&page, url, a11y_config, audit_config, start),
+        ) => Some(match r {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => errored_page(url, start, e),
+            Err(_) => errored_page(
+                url,
+                start,
+                format!("page timed out after {}s", timeout.as_secs()),
+            ),
+        }),
+    };
+
+    let _ = tokio::time::timeout(Duration::from_secs(5), page.close()).await;
+    outcome
+}
+
+/// Apply the audit's custom headers and cookies to the tab before navigating.
+async fn apply_network_config(page: &Page, url: &str, config: &AuditConfig) -> Result<(), String> {
+    if !config.headers.is_empty() {
+        let map: serde_json::Map<String, serde_json::Value> = config
+            .headers
+            .iter()
+            .filter(|(k, _)| !k.trim().is_empty())
+            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+            .collect();
+        page.execute(SetExtraHttpHeadersParams::new(Headers::new(
+            serde_json::Value::Object(map),
+        )))
+        .await
+        .map_err(|e| format!("set headers: {}", e))?;
+    }
+    let cookies: Vec<CookieParam> = config
+        .cookies
+        .iter()
+        .filter(|kv| !kv.key.trim().is_empty())
+        .map(|kv| {
+            let mut c = CookieParam::new(kv.key.clone(), kv.value.clone());
+            c.url = Some(url.to_string());
+            c
+        })
+        .collect();
+    if !cookies.is_empty() {
+        page.execute(SetCookiesParams::new(cookies))
+            .await
+            .map_err(|e| format!("set cookies: {}", e))?;
+    }
+    Ok(())
+}
+
+fn reason_phrase(code: u16, reported: &str) -> String {
+    if !reported.trim().is_empty() {
+        return reported.trim().to_string();
+    }
+    reqwest::StatusCode::from_u16(code)
+        .ok()
+        .and_then(|s| s.canonical_reason())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+/// HTTP status of the main document, from `Network.responseReceived` events
+/// (falls back to the Navigation Timing API when no event was captured).
+async fn main_document_status(
+    page: &Page,
+    events: &mut chromiumoxide::listeners::EventStream<EventResponseReceived>,
+) -> Option<(u16, String)> {
+    let main_frame = page.mainframe().await.ok().flatten();
+    let mut status = None;
+    // Drain whatever has already been delivered; the last main-frame document
+    // response is the one that was rendered (redirect hops are reported via
+    // requestWillBeSent, not responseReceived).
+    while let Some(Some(ev)) = events.next().now_or_never() {
+        let is_main = match (&main_frame, &ev.frame_id) {
+            (Some(main), Some(frame)) => main == frame,
+            _ => true,
+        };
+        if ev.r#type == ResourceType::Document && is_main && ev.response.status > 0 {
+            let code = ev.response.status as u16;
+            status = Some((code, reason_phrase(code, &ev.response.status_text)));
+        }
+    }
+    if status.is_some() {
+        return status;
+    }
+    let code: u16 = page
+        .evaluate(
+            "(() => { const e = performance.getEntriesByType('navigation')[0]; return (e && e.responseStatus) || 0; })()",
+        )
+        .await
+        .ok()?
+        .into_value()
+        .ok()?;
+    (code > 0).then(|| (code, reason_phrase(code, "")))
+}
+
+async fn scan_page(
+    page: &Page,
+    url: &str,
+    config: &A11yCheckConfig,
+    audit_config: &AuditConfig,
+    start: Instant,
+) -> Result<A11yPageResult, String> {
+    apply_network_config(page, url, audit_config).await?;
+
+    let mut responses = page
+        .event_listener::<EventResponseReceived>()
+        .await
+        .map_err(|e| format!("listen: {}", e))?;
+
+    page.goto(url.to_string())
+        .await
+        .map_err(|e| format!("navigate: {}", e))?;
+
+    let status = main_document_status(page, &mut responses).await;
+    drop(responses);
+
+    let (status_code, status_text) = match status {
+        Some((code, text)) => (Some(code), text),
+        None => (None, "unknown".to_string()),
+    };
+
+    // Error responses are errored pages (eligible for re-run), not pages to
+    // audit.
+    if let Some(code) = status_code.filter(|c| *c >= 400) {
+        return Ok(A11yPageResult {
+            url: url.to_string(),
+            page_title: None,
+            status: Some(code),
+            error: Some(format!("HTTP {} {}", code, status_text)),
+            status_text,
+            response_time_ms: Some(start.elapsed().as_millis() as u64),
+            issues: Vec::new(),
+            truncated: false,
+        });
+    }
+
+    // Inject axe-core and run it
+    page.evaluate(AXE_SOURCE)
+        .await
+        .map_err(|e| format!("inject axe: {}", e))?;
+    page.evaluate(AXE_EXTRA_RULES)
+        .await
+        .map_err(|e| format!("inject axe rules: {}", e))?;
+
+    let tags = axe_tags_for_standards(&config.standards);
+    let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into());
+    let run_expr = format!(
+        "axe.run({{ runOnly: {{ type: 'tag', values: {} }}, resultTypes: ['violations'] }}).then(r => JSON.stringify(r.violations))",
+        tags_json
+    );
+
+    let violations_json: String = page
+        .evaluate(run_expr)
+        .await
+        .map_err(|e| format!("axe.run: {}", e))?
+        .into_value()
+        .map_err(|e| format!("parse result: {}", e))?;
+
+    let violations = parse_violations(&violations_json)?;
+
+    let (mut issues, truncated) = violations_to_issues(&violations);
+    issues.retain(|i| severity_rank(&i.severity) >= severity_rank(&config.min_severity));
+
+    let title: Option<String> = page
+        .get_title()
+        .await
+        .ok()
+        .flatten()
+        .filter(|t| !t.trim().is_empty());
+
+    Ok(A11yPageResult {
+        url: url.to_string(),
+        page_title: title,
+        status: status_code,
+        status_text,
+        response_time_ms: Some(start.elapsed().as_millis() as u64),
+        error: None,
+        issues,
+        truncated,
+    })
+}
+
+/// Re-scan a subset of URLs with the axe engine (used by report re-run).
+/// URLs are expected to be final URLs as stored on report results.
+pub async fn scan_urls_axe(
+    app: &AppHandle,
+    audit: &A11yAudit,
+    report_id: &str,
+    urls: Vec<String>,
+    token: Arc<CancelToken>,
+) -> Result<Vec<A11yPageResult>, String> {
+    let session = AxeSession::launch(&format!("rerun-{}", uuid::Uuid::new_v4())).await?;
+
+    let total = urls.len();
+    let mut out = Vec::with_capacity(total);
+    for url in urls {
+        let Some(page_result) = scan_one(
+            &session.browser,
+            &url,
+            &audit.a11y_config,
+            &audit.config,
+            &token,
+        )
+        .await
+        else {
+            break;
+        };
+        emit_progress(app, report_id, out.len() + 1, total, true);
+        emit_result(app, report_id, &page_result, true);
+        out.push(page_result);
+    }
+
+    session.shutdown().await;
+    Ok(out)
+}
+
+/// Run a full axe-core audit. Returns `Err` only when the browser cannot be
+/// started; per-page failures become errored results.
 pub async fn run_axe_audit(
     app: &AppHandle,
     audit: &A11yAudit,
     target_list: &TargetList,
-    cancel_flag: Arc<AtomicBool>,
+    report_id: &str,
+    token: Arc<CancelToken>,
 ) -> Result<A11yReport, String> {
-    let exe = find_browser_executable().ok_or_else(|| {
-        "No Chromium-based browser found. Install Chrome/Chromium or set A11Y_CHROME_PATH."
-            .to_string()
-    })?;
-
-    let report_id = uuid::Uuid::new_v4().to_string();
     let started_at = chrono::Utc::now().to_rfc3339();
-    let total = target_list.urls.len();
+    let session = AxeSession::launch(report_id).await?;
 
-    let user_data_dir = std::env::temp_dir().join(format!("a11y-profile-{}", report_id));
-    std::fs::create_dir_all(&user_data_dir).ok();
-
-    let config = BrowserConfig::builder()
-        .chrome_executable(&exe)
-        .new_headless_mode()
-        .user_data_dir(&user_data_dir)
-        .hide()
-        .build()
-        .map_err(|e| format!("browser config: {}", e))?;
-
-    let (mut browser, mut handler) = Browser::launch(config)
-        .await
-        .map_err(|e| format!("failed to launch browser: {}", e))?;
-
-    tokio::spawn(async move { while handler.next().await.is_some() {} });
-
-    let results = Arc::new(std::sync::Mutex::new(Vec::with_capacity(total)));
-    let checked = Arc::new(std::sync::Mutex::new(0usize));
-    let urls: Vec<String> = target_list
-        .urls
-        .iter()
-        .map(|u| apply_a11y_origin_override(u, &audit.origin_override))
-        .map(|u| apply_a11y_url_postfix(&u, &audit.url_postfix))
-        .collect();
-    let a11y_config = audit.a11y_config.clone();
-    let page_timeout = Duration::from_secs(audit.config.timeout_secs.max(15));
+    let urls = target_urls(audit, target_list);
+    let total = urls.len();
+    let mut results: Vec<A11yPageResult> = Vec::with_capacity(total);
 
     for url in urls {
-        if cancel_flag.load(Ordering::SeqCst) {
-            break;
-        }
-
-        let page_result = match tokio::time::timeout(
-            page_timeout,
-            scan_page_with_browser(&browser, &url, &a11y_config),
+        let Some(page_result) = scan_one(
+            &session.browser,
+            &url,
+            &audit.a11y_config,
+            &audit.config,
+            &token,
         )
         .await
-        {
-            Ok(Ok(r)) => r,
-            Ok(Err(e)) => A11yPageResult {
-                url,
-                page_title: None,
-                status: None,
-                status_text: "error".into(),
-                response_time_ms: None,
-                error: Some(e),
-                issues: Vec::new(),
-            },
-            Err(_) => A11yPageResult {
-                url,
-                page_title: None,
-                status: None,
-                status_text: "error".into(),
-                response_time_ms: None,
-                error: Some(format!("page timed out after {}s", page_timeout.as_secs())),
-                issues: Vec::new(),
-            },
+        else {
+            break;
         };
+        results.push(page_result);
+        let page_result = results.last().expect("just pushed");
+        emit_progress(app, report_id, results.len(), total, false);
+        emit_result(app, report_id, page_result, false);
 
-        {
-            let mut results = results.lock().unwrap();
-            results.push(page_result.clone());
-            let mut checked = checked.lock().unwrap();
-            *checked += 1;
-            let _ = app.emit(
-                "a11y:progress",
-                serde_json::json!({
-                    "checked": *checked,
-                    "total": total,
-                }),
-            );
-            let _ = app.emit("a11y:result", &page_result);
-
-            let partial = A11yReport {
-                id: report_id.clone(),
-                audit_id: audit.id.clone(),
-                started_at: started_at.clone(),
-                completed_at: None,
-                status: "running".into(),
-                results: results.clone(),
-                summary: compute_browser_summary(&results),
-                standards: audit.a11y_config.standards.clone(),
-            };
-            if let Some(state) = app.try_state::<AppState>() {
-                let _ = state.storage.save_a11y_report(&partial);
-            }
-        }
+        let partial = build_report(
+            report_id,
+            audit,
+            started_at.clone(),
+            None,
+            "running",
+            results.clone(),
+        );
+        save_partial(app, &token, &partial);
     }
 
-    let _ = browser.close().await;
-    let _ = browser.wait().await;
-    std::fs::remove_dir_all(&user_data_dir).ok();
+    session.shutdown().await;
 
-    let completed_at = chrono::Utc::now().to_rfc3339();
-    let status = if cancel_flag.load(Ordering::SeqCst) {
-        "cancelled".into()
+    let status = if token.is_cancelled() {
+        "cancelled"
     } else {
-        "completed".into()
+        "completed"
     };
-
-    let results = results.lock().unwrap().clone();
-    let summary = compute_browser_summary(&results);
-
-    if status == "cancelled" {
-        let _ = app.emit("a11y:cancelled", ());
-    }
-
-    let report = A11yReport {
-        id: report_id,
-        audit_id: audit.id.clone(),
+    Ok(build_report(
+        report_id,
+        audit,
         started_at,
-        completed_at: Some(completed_at),
+        Some(chrono::Utc::now().to_rfc3339()),
         status,
         results,
-        summary,
-        standards: audit.a11y_config.standards.clone(),
-    };
-
-    let _ = app.emit("a11y:complete", &report);
-    Ok(report)
-}
-
-async fn scan_page_with_browser(
-    browser: &Browser,
-    url: &str,
-    config: &A11yCheckConfig,
-) -> Result<A11yPageResult, String> {
-    let start = Instant::now();
-    let page = browser
-        .new_page("about:blank")
-        .await
-        .map_err(|e| format!("new page: {}", e))?;
-
-    let result = async {
-        page.goto(url.to_string())
-            .await
-            .map_err(|e| format!("navigate: {}", e))?;
-
-        // Inject axe-core and run it
-        page.evaluate(AXE_SOURCE)
-            .await
-            .map_err(|e| format!("inject axe: {}", e))?;
-
-        let tags = axe_tags_for_standards(&config.standards);
-        let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into());
-        let run_expr = format!(
-            "axe.run({{ runOnly: {{ type: 'tag', values: {} }}, resultTypes: ['violations'] }}).then(r => JSON.stringify(r.violations))",
-            tags_json
-        );
-
-        let violations_json: String = page
-            .evaluate(run_expr)
-            .await
-            .map_err(|e| format!("axe.run: {}", e))?
-            .into_value()
-            .map_err(|e| format!("parse result: {}", e))?;
-
-        let violations: Vec<AxeViolation> =
-            serde_json::from_str(&violations_json).unwrap_or_default();
-
-        let mut issues = violations_to_issues(&violations);
-        issues.retain(|i| severity_rank(&i.severity) >= severity_rank(&config.min_severity));
-
-        let title: Option<String> = page
-            .get_title()
-            .await
-            .ok()
-            .flatten()
-            .filter(|t| !t.trim().is_empty());
-
-        let elapsed = start.elapsed().as_millis() as u64;
-        Ok::<A11yPageResult, String>(A11yPageResult {
-            url: url.to_string(),
-            page_title: title,
-            status: Some(200),
-            status_text: "OK".into(),
-            response_time_ms: Some(elapsed),
-            error: None,
-            issues,
-        })
-    }
-    .await;
-
-    let _ = page.close().await;
-    result
+    ))
 }
 
 fn severity_rank(s: &str) -> u8 {
@@ -486,27 +693,76 @@ mod tests {
         assert!(!t.contains(&"wcag22aa".to_string()));
     }
 
+    fn violation(id: &str, nodes: usize) -> AxeViolation {
+        AxeViolation {
+            id: id.into(),
+            impact: Some("serious".into()),
+            help: Some("help".into()),
+            help_url: None,
+            tags: vec!["wcag2a".into(), "wcag111".into()],
+            nodes: (0..nodes)
+                .map(|i| AxeNode {
+                    target: vec![serde_json::Value::String(format!("#n{}", i))],
+                    html: Some("<div>".into()),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn violations_cap_and_truncation_flag() {
+        // within limits -> not truncated
+        let (issues, truncated) = violations_to_issues(&[violation("a", 3), violation("b", 0)]);
+        assert_eq!(issues.len(), 4);
+        assert!(!truncated);
+        assert_eq!(issues[0].wcag, "1.1.1");
+
+        // per-rule node cap
+        let (issues, truncated) =
+            violations_to_issues(&[violation("a", MAX_NODES_PER_VIOLATION + 5)]);
+        assert_eq!(issues.len(), MAX_NODES_PER_VIOLATION);
+        assert!(truncated);
+
+        // global cap also applies to node-less violations
+        let many: Vec<AxeViolation> = (0..MAX_TOTAL_ISSUES + 10)
+            .map(|i| violation(&format!("r{}", i), 0))
+            .collect();
+        let (issues, truncated) = violations_to_issues(&many);
+        assert_eq!(issues.len(), MAX_TOTAL_ISSUES);
+        assert!(truncated);
+    }
+
+    #[test]
+    fn parse_violations_rejects_garbage() {
+        assert!(parse_violations("[]").unwrap().is_empty());
+        assert!(parse_violations("not json").is_err());
+        assert!(parse_violations("{\"oops\":1}").is_err());
+    }
+
+    #[test]
+    fn reason_phrase_fallback() {
+        assert_eq!(reason_phrase(404, ""), "Not Found");
+        assert_eq!(reason_phrase(200, "OK"), "OK");
+    }
+
     #[tokio::test]
     #[ignore]
     async fn smoke_axe_scan_real_page() {
-        let exe = find_browser_executable().expect("no browser found");
-        let dir = std::env::temp_dir().join("a11y-test-profile");
-        let config = BrowserConfig::builder()
-            .chrome_executable(&exe)
-            .new_headless_mode()
-            .user_data_dir(&dir)
-            .hide()
-            .build()
-            .unwrap();
-        let (mut browser, mut handler) = Browser::launch(config).await.unwrap();
-        tokio::spawn(async move { while handler.next().await.is_some() {} });
-
+        let session = AxeSession::launch("test").await.expect("launch browser");
         let url = std::env::var("A11Y_TEST_URL").unwrap_or_else(|_| "https://example.com".into());
-        let result = scan_page_with_browser(&browser, &url, &A11yCheckConfig::default())
-            .await
-            .unwrap();
+        let token = CancelToken::new();
+        let result = scan_one(
+            &session.browser,
+            &url,
+            &A11yCheckConfig::default(),
+            &AuditConfig::default(),
+            &token,
+        )
+        .await
+        .expect("not cancelled");
         eprintln!(
-            "title={:?} issues={}",
+            "status={:?} title={:?} issues={}",
+            result.status,
             result.page_title,
             result.issues.len()
         );
@@ -517,33 +773,6 @@ mod tests {
             );
         }
         assert!(result.error.is_none());
-
-        let _ = browser.close().await;
-        let _ = std::fs::remove_dir_all(&dir);
+        session.shutdown().await;
     }
-}
-
-fn compute_browser_summary(results: &[A11yPageResult]) -> A11ySummary {
-    let mut summary = A11ySummary {
-        total_pages: results.len(),
-        ..Default::default()
-    };
-    for r in results {
-        if r.error.is_some() {
-            summary.errored += 1;
-            continue;
-        }
-        if !r.issues.is_empty() {
-            summary.pages_with_issues += 1;
-        }
-        for issue in &r.issues {
-            match issue.severity.as_str() {
-                "critical" => summary.critical += 1,
-                "serious" => summary.serious += 1,
-                "moderate" => summary.moderate += 1,
-                _ => summary.minor += 1,
-            }
-        }
-    }
-    summary
 }
